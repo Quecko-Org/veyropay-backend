@@ -1,11 +1,16 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { PinoLogger } from 'nestjs-pino';
 import { IApiErrorResponse } from '@shared/responses';
+import { ProviderException } from '@common/exceptions';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: PinoLogger) {
+  constructor(
+    private readonly logger: PinoLogger,
+    private readonly configService: ConfigService,
+  ) {
     this.logger.setContext(GlobalExceptionFilter.name);
   }
 
@@ -24,6 +29,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       requestId: (request as unknown as { id?: string }).id,
+      debug: this.resolveDebugDetail(exception),
     };
 
     const internalServerErrorStatus: number = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -35,6 +41,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     response.status(statusCode).json(errorResponse);
+  }
+
+  private resolveDebugDetail(exception: unknown): string | undefined {
+    const env = this.configService.get<string>('app.env');
+    if (env === 'production') {
+      return undefined;
+    }
+
+    if (!(exception instanceof ProviderException) || exception.providerCause === undefined) {
+      return undefined;
+    }
+
+    return exception.providerCause instanceof Error
+      ? exception.providerCause.message
+      : JSON.stringify(exception.providerCause);
   }
 
   private resolveException(exception: unknown): {

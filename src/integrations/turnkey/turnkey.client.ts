@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ITurnkeyConfig } from '@core/config/turnkey.config';
-import { createTurnkeyApiStamp } from './turnkey-stamp.util';
+import { ApiKeyStamper } from '@turnkey/api-key-stamper';
 import {
   ITurnkeyCompleteRecoveryParams,
   ITurnkeyCompleteRecoveryResult,
@@ -29,9 +29,19 @@ interface IActivityResponse<TResult> {
 @Injectable()
 export class TurnkeyClient {
   private readonly config: ITurnkeyConfig;
+  private readonly stamper: ApiKeyStamper;
 
   constructor(configService: ConfigService) {
     this.config = configService.get<ITurnkeyConfig>('turnkey') as ITurnkeyConfig;
+    this.stamper = new ApiKeyStamper({
+      apiPublicKey: this.config.apiKey,
+      apiPrivateKey: this.config.apiSecret as string,
+    });
+  }
+
+  private async stamp(body: unknown): Promise<string> {
+    const { stampHeaderValue } = await this.stamper.stamp(JSON.stringify(body));
+    return stampHeaderValue;
   }
 
   // Verifies a client-signed request and returns the identity Turnkey resolved it to.
@@ -57,7 +67,7 @@ export class TurnkeyClient {
   // current reference before this goes live.
   async getWalletAccounts(organizationId: string): Promise<ITurnkeyWalletAccountsResponse> {
     const body = { organizationId };
-    const stamp = createTurnkeyApiStamp(body, this.config.apiKey, this.config.apiSecret as string);
+    const stamp = await this.stamp(body);
 
     return this.request<ITurnkeyWalletAccountsResponse>('/public/v1/query/list_wallet_accounts', {
       method: 'POST',
@@ -79,14 +89,14 @@ export class TurnkeyClient {
   async createSubOrganization(
     params: ITurnkeyCreateSubOrganizationParams,
   ): Promise<ITurnkeyCreateSubOrganizationResult> {
-    const response = await this.submitActivity<ITurnkeyCreateSubOrganizationResult>(
+    const response = await this.submitActivity<{createSubOrganizationResultV8:ITurnkeyCreateSubOrganizationResult}>(
       'ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V8',
       '/public/v1/submit/create_sub_organization',
       this.config.organizationId,
       params,
     );
-
-    return response.activity.result;
+    console.log("ressss", response)
+    return response.activity.result.createSubOrganizationResultV8;
   }
 
   // Finds existing sub-organization(s) linked to an OIDC identity (Google/Apple id
@@ -99,8 +109,10 @@ export class TurnkeyClient {
       filterType: 'OIDC_TOKEN',
       filterValue: oidcToken,
     };
-    const stamp = createTurnkeyApiStamp(body, this.config.apiKey, this.config.apiSecret as string);
+    console.log("dddddd", this.config.apiKey, this.config.apiSecret, body)
+    const stamp = await this.stamp(body);
 
+    console.log("stamp created", stamp);
     return this.request<ITurnkeyGetSubOrgIdsResponse>('/public/v1/query/list_suborgs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Stamp': stamp },
@@ -116,14 +128,14 @@ export class TurnkeyClient {
     organizationId: string,
     params: ITurnkeyOauthLoginParams,
   ): Promise<ITurnkeyOauthLoginResult> {
-    const response = await this.submitActivity<ITurnkeyOauthLoginResult>(
+    const response = await this.submitActivity<{oauthLoginResult:ITurnkeyOauthLoginResult}>(
       'ACTIVITY_TYPE_OAUTH_LOGIN',
       '/public/v1/submit/oauth_login',
       organizationId,
       params,
     );
-
-    return response.activity.result;
+console.log("oauth response",response)
+    return response.activity.result.oauthLoginResult;
   }
 
   // Starts email-based identity recovery for a user: Turnkey emails a recovery
@@ -137,7 +149,7 @@ export class TurnkeyClient {
   async initEmailRecovery(
     params: ITurnkeyInitEmailRecoveryParams,
   ): Promise<ITurnkeyInitEmailRecoveryResult> {
-    const response = await this.submitActivity<ITurnkeyInitEmailRecoveryResult>(
+    const response = await this.submitActivity<{initUserEmailRecoveryResult:ITurnkeyInitEmailRecoveryResult}>(
       'ACTIVITY_TYPE_INIT_USER_EMAIL_RECOVERY_V2',
       '/public/v1/submit/init_user_email_recovery',
       params.organizationId,
@@ -149,7 +161,7 @@ export class TurnkeyClient {
       },
     );
 
-    return response.activity.result;
+    return response.activity.result.initUserEmailRecoveryResult;
   }
 
   // Completes recovery by registering a new authenticator (passkey) for the user.
@@ -173,7 +185,7 @@ export class TurnkeyClient {
       },
     };
 
-    const response = await this.request<IActivityResponse<ITurnkeyCompleteRecoveryResult>>(
+    const response = await this.request<IActivityResponse<{recoverUserResult:ITurnkeyCompleteRecoveryResult}>>(
       '/public/v1/submit/recover_user',
       {
         method: 'POST',
@@ -182,7 +194,7 @@ export class TurnkeyClient {
       },
     );
 
-    return response.activity.result;
+    return response.activity.result.recoverUserResult;
   }
 
   private async submitActivity<TResult>(
@@ -197,7 +209,7 @@ export class TurnkeyClient {
       organizationId,
       parameters,
     };
-    const stamp = createTurnkeyApiStamp(body, this.config.apiKey, this.config.apiSecret as string);
+    const stamp = await this.stamp(body);
 
     return this.request<IActivityResponse<TResult>>(path, {
       method: 'POST',
@@ -216,10 +228,11 @@ export class TurnkeyClient {
         signal: controller.signal,
       });
 
-      if (!response.ok) {
-        throw new Error(`Turnkey request failed with status ${response.status}`);
-      }
 
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Turnkey request failed with status ${response.status}: ${errorBody}`);
+      }
       return (await response.json()) as T;
     } finally {
       clearTimeout(timeout);

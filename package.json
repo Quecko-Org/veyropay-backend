@@ -39,6 +39,7 @@
     "@nestjs/throttler": "^6.4.0",
     "@nestjs/typeorm": "^11.0.0",
     "@safe-global/protocol-kit": "^8.0.4",
+    "@turnkey/api-key-stamper": "^0.6.10",
     "@turnkey/crypto": "^2.10.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",

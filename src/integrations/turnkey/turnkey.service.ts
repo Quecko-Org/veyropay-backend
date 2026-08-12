@@ -73,7 +73,7 @@ export class TurnkeyService {
       this.logger.warn({ err: error }, 'Turnkey sub-organization creation failed');
       throw new ProviderException(
         TURNKEY_PROVIDER_NAME,
-        'Unable to create Turnkey sub-organization',
+        `Unable to create Turnkey sub-organization ${error}`,
       );
     }
   }
@@ -88,7 +88,7 @@ export class TurnkeyService {
       this.logger.warn({ err: error }, 'Turnkey sub-organization lookup by OIDC token failed');
       throw new ProviderException(
         TURNKEY_PROVIDER_NAME,
-        'Unable to look up Turnkey sub-organization',
+        `Unable to look up Turnkey sub-organization${error}`,
       );
     }
   }
@@ -100,6 +100,7 @@ export class TurnkeyService {
     params: ITurnkeyOauthLoginParams,
   ): Promise<ITurnkeyOauthLoginResult> {
     try {
+      console.log("p",params)
       return await this.client.oauthLogin(organizationId, params);
     } catch (error) {
       this.logger.warn({ err: error }, 'Turnkey OAuth login failed');
@@ -107,6 +108,7 @@ export class TurnkeyService {
         TURNKEY_PROVIDER_NAME,
         'Unable to complete OAuth login',
         HttpStatus.UNAUTHORIZED,
+        error
       );
     }
   }

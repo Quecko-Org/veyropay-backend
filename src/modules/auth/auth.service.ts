@@ -91,7 +91,7 @@ export class AuthService {
   // See docs.turnkey.com/features/authentication/social-logins.
   async oauthLogin(dto: OauthLoginDto): Promise<OauthLoginResultDto> {
     let organizationId = await this.turnkeyService.findSubOrganizationByOidcToken(dto.oidcToken);
-
+console.log("after findSubOrganizationByOidcToken ,organizationId",organizationId)
     if (!organizationId) {
       const result = await this.turnkeyService.provisionSubOrganization({
         subOrganizationName: `${dto.userName ?? dto.providerName} organization`,
@@ -111,14 +111,16 @@ export class AuthService {
         },
       });
       organizationId = result.subOrganizationId;
-    }
+      console.log("result",result,organizationId)
 
+    }
+    console.log("loginnn",organizationId)
     const loginResult = await this.turnkeyService.loginWithOauth(organizationId, {
       organizationId,
       oidcToken: dto.oidcToken,
       publicKey: dto.apiPublicKey,
     });
-
+console.log("loginResult",loginResult)
     return new OauthLoginResultDto({ sessionJwt: loginResult.session });
   }
 

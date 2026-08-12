@@ -13,7 +13,6 @@ export class WalletEntity extends BaseEntity {
   @JoinColumn({ name: 'user_id' })
   user!: UserEntity;
 
-  // Named neutrally rather than doc06's literal "safeAddress" - which smart account
   // provider backs this address is an open architecture decision, see
   // docs/18_DECISIONS_AND_ASSUMPTIONS.md §2.1. Nullable because a Wallet row exists in
   // PENDING_PROVIDER status before any address can be assigned.

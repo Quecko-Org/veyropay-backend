@@ -6,4 +6,5 @@ export interface IApiErrorResponse {
   timestamp: string;
   path: string;
   requestId?: string;
+  debug?: string;
 }

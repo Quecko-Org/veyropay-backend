@@ -4,7 +4,7 @@
 FROM node:22-alpine AS deps
 WORKDIR /usr/src/app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 
 # ---- Build ----
 FROM node:22-alpine AS build
@@ -26,6 +26,6 @@ COPY --from=build /usr/src/app/package.json ./package.json
 
 USER nestjs
 
-EXPOSE 3000
+EXPOSE 4006
 
 CMD ["node", "dist/main.js"]

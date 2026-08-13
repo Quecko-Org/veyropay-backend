@@ -42,6 +42,7 @@ jobs:
         run: |
           docker run -d \
             --name ${CONTAINER_NAME}-candidate \
+            --network veyropay-net \
             --env-file .env \
             $IMAGE_NAME:new
       # =========================
@@ -82,6 +83,7 @@ jobs:
           # Start new container (production)
           docker run -d \
             --name $CONTAINER_NAME \
+            --network veyropay-net \
             --env-file .env \
             -p 4006:4006 \
             $IMAGE_NAME:new

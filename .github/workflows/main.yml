@@ -1,0 +1,122 @@
+name: Deploy to main branch
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploying to Production Server
+    runs-on: [self-hosted, veyropay-be-main]
+    environment: prod
+
+    env:
+      IMAGE_NAME: veyropay-be-main
+      CONTAINER_NAME: veyropay-be-main
+
+    steps:
+      # =========================
+      # 1. Checkout repository
+      # =========================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      # =========================
+      # 2. Build NEW image (fresh + includes HEALTHCHECK)
+      # =========================
+      - name: Build new image
+        run: |
+          docker build --no-cache -t $IMAGE_NAME:new .
+      # =========================
+      # 3. Cleanup old candidate (prevent conflicts)
+      # =========================
+      - name: Cleanup old candidate container
+        run: |
+          docker rm -f ${CONTAINER_NAME}-candidate || true
+      # =========================
+      # 4. Start candidate container (NO traffic exposure)
+      # =========================
+      - name: Start candidate container
+        run: |
+          docker run -d \
+            --name ${CONTAINER_NAME}-candidate \
+            --env-file .env \
+            $IMAGE_NAME:new
+      # =========================
+      # 5. Wait for healthcheck
+      # =========================
+      - name: Wait for healthcheck
+        run: |
+          echo "Waiting for candidate container to become healthy..."
+          for i in {1..25}; do
+            STATUS=$(docker inspect \
+              --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' \
+              ${CONTAINER_NAME}-candidate)
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Candidate is healthy :white_check_mark:"
+              exit 0
+            fi
+            if [ "$STATUS" = "unhealthy" ]; then
+              echo "Candidate became unhealthy :x:"
+              docker logs ${CONTAINER_NAME}-candidate --tail 50 || true
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Healthcheck timeout :x:"
+          docker logs ${CONTAINER_NAME}-candidate --tail 50 || true
+          exit 1
+      # =========================
+      # 6. Promote candidate → production
+      # =========================
+      - name: Switch to new version
+        if: success()
+        run: |
+          echo "Switching production container..."
+          # Stop old container
+          docker stop $CONTAINER_NAME || true
+          docker rm $CONTAINER_NAME || true
+          # Start new container (production)
+          docker run -d \
+            --name $CONTAINER_NAME \
+            --env-file .env \
+            -p 4006:4006 \
+            $IMAGE_NAME:new
+          # Remove candidate
+          docker rm -f ${CONTAINER_NAME}-candidate || true
+      # =========================
+      # 7. Cleanup on failure
+      # =========================
+      - name: Cleanup failed candidate
+        if: failure()
+        run: |
+          echo "Deployment failed - cleaning candidate container..."
+          docker rm -f ${CONTAINER_NAME}-candidate || true
+      # =========================
+      # 8. Verify running containers
+      # =========================
+      - name: Verify running containers
+        run: |
+          docker ps
+      # =========================
+      # 9. Show logs
+      # =========================
+      - name: Show logs
+        run: |
+          docker logs $CONTAINER_NAME --tail 50 || true
+      # =========================
+      # 10. Cleanup old images
+      # =========================
+      - name: Cleanup old images
+        run: |
+          echo "Cleaning old images for $IMAGE_NAME..."
+          IMAGES=$(docker images "$IMAGE_NAME" --format "{{.ID}}")
+          COUNT=$(echo "$IMAGES" | wc -l)
+          if [ "$COUNT" -gt 1 ]; then
+            echo "$IMAGES" | tail -n +2 | xargs -r docker rmi -f
+          else
+            echo "No old images to clean."
+          fi

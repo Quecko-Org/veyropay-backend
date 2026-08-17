@@ -9,9 +9,9 @@ import { IsEmail, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-valid
 // submits to POST /auth/login.
 export class SignupDto {
   @ApiProperty({ description: 'Human-readable name for the new user' })
-    @IsString()
+  @IsString()
   @IsOptional()
-  userName!: string;
+  userName?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

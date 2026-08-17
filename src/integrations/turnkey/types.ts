@@ -59,7 +59,7 @@ export interface ITurnkeyApiKeyParams {
 }
 
 export interface ITurnkeyRootUserParams {
-  userName: string;
+  userName?: string;
   userEmail?: string;
   apiKeys: ITurnkeyApiKeyParams[];
   authenticators: ITurnkeyAuthenticatorParams[];

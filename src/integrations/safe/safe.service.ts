@@ -63,7 +63,7 @@ export class SafeService {
       provider: this.config.rpcUrl,
       predictedSafe: {
         safeAccountConfig: {
-          owners: [ownerAddress],
+          owners: [ownerAddress], 
           threshold: 1,
           to: this.config.moduleSetupAddress,
           data: buildEnableModulesSetupCallData(this.config.module4337Address),
@@ -84,6 +84,7 @@ export class SafeService {
   async predictAddress(ownerAddress: Address): Promise<Address> {
     try {
       const kit = await this.getPredictedKit(ownerAddress);
+      console.log("kit",kit,await kit.getAddress())
       return (await kit.getAddress()) as Address;
     } catch (error) {
       this.logger.warn({ err: error }, 'Safe address prediction failed');

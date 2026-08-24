@@ -2,10 +2,6 @@ import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { IsHexadecimal, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 export class PrepareUserOperationDto {
-  @ApiProperty({ description: 'Call target address' })
-  @IsString()
-  @IsNotEmpty()
-  paymaster!: string;
 
   @ApiProperty({ description: 'Call target address' })
   @IsString()
@@ -19,7 +15,7 @@ export class PrepareUserOperationDto {
   value?: string;
 
   @ApiPropertyOptional({ description: 'Call data, hex-encoded', default: '0x' })
-  @IsOptional()
-  @IsHexadecimal()
-  data?: string;
+@IsOptional()
+@Matches(/^0x[a-fA-F0-9]*$/, { message: 'data must be a valid hex string' })
+data?: string;
 }

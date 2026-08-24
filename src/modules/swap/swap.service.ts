@@ -29,7 +29,7 @@ export class SwapService {
       return this.oneinchService.getQuote({
         chainId: Number(dto.fromChain),
         src: dto.fromAsset,
-        dst: dto.toAsset,
+        dst: dto.toAsset, 
         amount: dto.amount,
       });
     }

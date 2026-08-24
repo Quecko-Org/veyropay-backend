@@ -10,7 +10,7 @@ export class GasSponsorshipRepository extends BaseRepository<GasSponsorshipEntit
     @InjectRepository(GasSponsorshipEntity) repository: Repository<GasSponsorshipEntity>,
   ) {
     super(repository);
-  }
+  } 
 
   // Sum of sponsored wei for this user since a given timestamp - used to check the
   // daily/monthly cap. Returns 0n, not null, when there's no usage yet.

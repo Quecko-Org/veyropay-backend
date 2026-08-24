@@ -1,9 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-// Unsigned ERC-4337 UserOperation (EntryPoint v0.7 shape) ready for the client to
-// sign locally via Turnkey and submit back through POST /transfer. The backend
-// never signs this - it only fills in the fields that require chain/provider state
-// (nonce, initCode, gas estimates) that the client has no way to compute itself.
 export class PreparedUserOperationDto {
   @ApiProperty()
   sender!: string;
@@ -32,8 +28,17 @@ export class PreparedUserOperationDto {
   @ApiProperty()
   maxPriorityFeePerGas!: string;
 
+  @ApiProperty({ description: '0x if unsponsored' })
+  paymaster!: string;
+
+  @ApiProperty({ description: '0x if unsponsored' })
+  paymasterData!: string;
+
   @ApiProperty()
-  paymasterAndData!: string;
+  paymasterVerificationGasLimit!: string;
+
+  @ApiProperty()
+  paymasterPostOpGasLimit!: string;
 
   @ApiProperty()
   entryPoint!: string;

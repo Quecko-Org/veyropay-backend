@@ -5,19 +5,30 @@ import { ENTRY_POINT_GET_NONCE_ABI } from '@integrations/safe/contracts.constant
 import { buildGetNonceCallData } from '@integrations/safe/safe-account.util';
 import { SafeService } from '@integrations/safe/safe.service';
 import { SOCIAL_RECOVERY_MODULE_ABI } from '@integrations/safe/social-recovery-module.constant';
+import { ConfigService } from '@nestjs/config';
 import { PimlicoClient } from './pimlico.client';
-import { IGasPriceTier, IUserOperation, IUserOperationReceipt } from './types';
+import {
+  IGasPriceTier,
+  IPimlicoSponsorUserOperationResult,
+  IUserOperation,
+  IUserOperationReceipt,
+} from './types';
 import { DEFAULT_ENTRY_POINT, PIMLICO_PROVIDER_NAME } from './constants';
+import { IPimlicoConfig } from '@core/config/pimlico.config';
 
-// Business modules depend on this service, never on PimlicoClient directly.
 @Injectable()
 export class PimlicoService {
   private readonly logger = new Logger(PimlicoService.name);
 
+  private readonly config: IPimlicoConfig;
+
   constructor(
     private readonly client: PimlicoClient,
     private readonly safeService: SafeService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.config = configService.get<IPimlicoConfig>('pimlico') as IPimlicoConfig;
+  }
 
   async submitUserOperation(
     userOperation: IUserOperation,
@@ -96,12 +107,6 @@ export class PimlicoService {
     }
   }
 
-  // On-chain reads against the SocialRecoveryModule - same eth_call + decode pattern as
-  // getAccountNonce above, reused here rather than adding a separate RPC client since
-  // Pimlico's endpoint already proxies plain eth_call. Module-enablement checks
-  // (isModuleEnabled) now go through SafeService (@safe-global/protocol-kit) instead -
-  // that's a Safe-native ModuleManager primitive Protocol Kit already provides.
-
   async getSocialRecoveryNonce(safeAddress: Address): Promise<bigint> {
     try {
       const result = await this.client.ethCall(
@@ -134,6 +139,35 @@ export class PimlicoService {
     } catch (error) {
       this.logger.warn({ err: error }, 'Recovery hash computation failed');
       throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to compute the recovery hash');
+    }
+  }
+
+  async sponsorUserOperation(
+    userOperation: IUserOperation,
+    entryPoint: string = DEFAULT_ENTRY_POINT,
+  ): Promise<IPimlicoSponsorUserOperationResult | null> {
+    try {
+      return await this.client.sponsorUserOperation(
+        userOperation,
+        entryPoint,
+        this.config.sponsorshipPolicyId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        'Pimlico gas sponsorship declined or unavailable - falling back to unsponsored',
+      );
+      return null;
+    }
+  }
+
+  async getNativeBalance(address: Address): Promise<bigint> {
+    try {
+      const result = await this.client.getBalance(address);
+      return BigInt(result);
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Pimlico native balance lookup failed');
+      throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to check wallet balance');
     }
   }
 }

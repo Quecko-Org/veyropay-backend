@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IProviderConfig } from '@shared/interfaces';
+import { ISwapFeeConfig } from '@core/config/swap.config';
 import {
   IOneinchQuoteRequest,
   IOneinchQuoteResponse,
@@ -8,14 +9,21 @@ import {
   IOneinchSwapResponse,
 } from './types';
 
-// Thin HTTP client wrapper around the 1inch Swap API (same-chain swaps only).
-// See https://portal.1inch.dev/documentation/swap/swagger
 @Injectable()
 export class OneinchClient {
   private readonly config: IProviderConfig;
+  private readonly swapFeeConfig: ISwapFeeConfig;
 
   constructor(configService: ConfigService) {
     this.config = configService.get<IProviderConfig>('oneinch') as IProviderConfig;
+    this.swapFeeConfig = configService.get<ISwapFeeConfig>('swapFee') as ISwapFeeConfig;
+  }
+
+  private applySwapFee(query: URLSearchParams): void {
+    if (this.swapFeeConfig.percentage > 0 && this.swapFeeConfig.recipientAddress) {
+      query.set('fee', String(this.swapFeeConfig.percentage));
+      query.set('referrer', this.swapFeeConfig.recipientAddress);
+    }
   }
 
   async getQuote(request: IOneinchQuoteRequest): Promise<IOneinchQuoteResponse> {
@@ -24,6 +32,7 @@ export class OneinchClient {
       dst: request.dst,
       amount: request.amount,
     });
+    this.applySwapFee(query);
 
     return this.request<IOneinchQuoteResponse>(`/swap/v6.0/${request.chainId}/quote?${query}`);
   }
@@ -36,6 +45,7 @@ export class OneinchClient {
       from: request.from,
       slippage: String(request.slippage),
     });
+    this.applySwapFee(query);
 
     return this.request<IOneinchSwapResponse>(`/swap/v6.0/${request.chainId}/swap?${query}`);
   }

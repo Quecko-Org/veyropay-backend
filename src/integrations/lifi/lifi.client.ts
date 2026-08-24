@@ -1,16 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IProviderConfig } from '@shared/interfaces';
+import { ISwapFeeConfig } from '@core/config/swap.config';
 import { ILifiQuoteRequest, ILifiQuoteResponse } from './types';
 
-// Thin HTTP client wrapper around the LiFi API (cross-chain routing).
-// See https://apidocs.li.fi
 @Injectable()
 export class LifiClient {
   private readonly config: IProviderConfig;
+  private readonly swapFeeConfig: ISwapFeeConfig;
 
   constructor(configService: ConfigService) {
     this.config = configService.get<IProviderConfig>('lifi') as IProviderConfig;
+    this.swapFeeConfig = configService.get<ISwapFeeConfig>('swapFee') as ISwapFeeConfig;
   }
 
   async getQuote(request: ILifiQuoteRequest): Promise<ILifiQuoteResponse> {
@@ -22,6 +23,11 @@ export class LifiClient {
       fromAmount: request.fromAmount,
       fromAddress: request.fromAddress,
     });
+
+    if (this.swapFeeConfig.percentage > 0 && this.swapFeeConfig.lifiIntegratorId) {
+      query.set('fee', String(this.swapFeeConfig.percentage / 100));
+      query.set('integrator', this.swapFeeConfig.lifiIntegratorId);
+    }
 
     return this.request<ILifiQuoteResponse>(`/quote?${query}`);
   }

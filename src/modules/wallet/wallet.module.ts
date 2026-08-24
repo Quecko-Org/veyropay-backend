@@ -8,11 +8,13 @@ import { PimlicoModule } from '@integrations/pimlico/pimlico.module';
 import { WalletController } from './wallet.controller';
 import { WalletService } from './wallet.service';
 import { WalletEntity } from './entities/wallet.entity';
+import { GasSponsorshipEntity } from './entities/gas-sponsorship.entity';
 import { WalletRepository } from './repositories/wallet.repository';
+import { GasSponsorshipRepository } from './repositories/gas-sponsorship.repository';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WalletEntity]),
+    TypeOrmModule.forFeature([WalletEntity, GasSponsorshipEntity]),
     TransactionModule,
     ProfileModule,
     TurnkeyModule,
@@ -20,7 +22,7 @@ import { WalletRepository } from './repositories/wallet.repository';
     PimlicoModule,
   ],
   controllers: [WalletController],
-  providers: [WalletService, WalletRepository],
+  providers: [WalletService, WalletRepository, GasSponsorshipRepository],
   exports: [WalletService],
 })
 export class WalletModule {}

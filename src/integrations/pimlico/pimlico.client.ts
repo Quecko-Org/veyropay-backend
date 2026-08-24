@@ -4,12 +4,11 @@ import { IProviderConfig } from '@shared/interfaces';
 import {
   IJsonRpcResponse,
   IPimlicoGasPriceResponse,
+  IPimlicoSponsorUserOperationResult,
   IUserOperation,
   IUserOperationReceipt,
 } from './types';
 
-// Thin JSON-RPC client wrapper around the Pimlico bundler/paymaster API.
-// See https://docs.pimlico.io - exact method availability depends on the chain/EntryPoint.
 @Injectable()
 export class PimlicoClient {
   private readonly config: IProviderConfig;
@@ -34,9 +33,6 @@ export class PimlicoClient {
     return this.rpcCall('eth_estimateUserOperationGas', [userOperation, entryPoint]);
   }
 
-  // Pimlico endpoints proxy standard Ethereum JSON-RPC methods alongside the
-  // bundler-specific ones, so these reuse the same client rather than requiring a
-  // separate RPC provider integration.
   async ethCall(to: string, data: string): Promise<string> {
     return this.rpcCall<string>('eth_call', [{ to, data }, 'latest']);
   }
@@ -49,9 +45,22 @@ export class PimlicoClient {
     return this.rpcCall<IPimlicoGasPriceResponse>('pimlico_getUserOperationGasPrice', []);
   }
 
-  // Standard JSON-RPC methods used by RelayerService to broadcast a plain (non-4337)
-  // transaction - Pimlico's endpoint proxies these alongside its bundler-specific ones,
-  // same rationale as ethCall/getCode above.
+  async sponsorUserOperation(
+    userOperation: IUserOperation,
+    entryPoint: string,
+    sponsorshipPolicyId?: string,
+  ): Promise<IPimlicoSponsorUserOperationResult> {
+    return this.rpcCall<IPimlicoSponsorUserOperationResult>('pm_sponsorUserOperation', [
+      userOperation,
+      entryPoint,
+      sponsorshipPolicyId ? { sponsorshipPolicyId } : null,
+    ]);
+  }
+
+  async getBalance(address: string): Promise<string> {
+    return this.rpcCall<string>('eth_getBalance', [address, 'latest']);
+  }
+
   async getTransactionCount(address: string): Promise<string> {
     return this.rpcCall<string>('eth_getTransactionCount', [address, 'pending']);
   }

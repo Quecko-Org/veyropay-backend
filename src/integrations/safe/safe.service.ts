@@ -52,7 +52,7 @@ export class SafeService {
   constructor(
     private readonly client: SafeClient,
     configService: ConfigService,
-  ) {
+  ) { 
     this.config = configService.get<ISafeConfig>('safe') as ISafeConfig;
   }
 

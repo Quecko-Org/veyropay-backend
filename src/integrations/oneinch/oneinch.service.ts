@@ -8,13 +8,20 @@ import {
   IOneinchSwapResponse,
 } from './types';
 import { ONEINCH_PROVIDER_NAME } from './constants';
+import { ConfigService } from '@nestjs/config';
+import { ISwapFeeConfig } from '@app/core/config/swap.config';
 
 // Business modules depend on this service, never on OneinchClient directly.
 @Injectable()
 export class OneinchService {
   private readonly logger = new Logger(OneinchService.name);
+  private readonly config: ISwapFeeConfig;
 
-  constructor(private readonly client: OneinchClient) {}
+  constructor(private readonly client: OneinchClient,
+    configService: ConfigService,
+  ) {
+    this.config = configService.get<ISwapFeeConfig>('swapFee') as ISwapFeeConfig;
+  }
 
   async getQuote(request: IOneinchQuoteRequest): Promise<IOneinchQuoteResponse> {
     try {

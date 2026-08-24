@@ -133,7 +133,7 @@ console.log("loginResult",loginResult)
     const identity = await this.turnkeyService.verifySessionToken(dto.sessionJwt);
 
     const user = await this.profileService.findOrCreateByTurnkeyUserId(identity.userId, dto.email);
-
+console.log("user",user,dto)
     // Persisted so smart account provisioning can look up the user's Turnkey
     // sub-organization later without requiring the client to resend it.
     await this.profileService.setProviderReference(
@@ -141,7 +141,7 @@ console.log("loginResult",loginResult)
       TURNKEY_ORGANIZATION_PROVIDER_KEY,
       identity.organizationId,
     );
-
+console.log("identity",identity)
     // Wallet creation is automatic and transparent per docs/02_PRODUCT_REQUIREMENTS.md,
     // even though the on-chain smart account provider is still pending a decision.
     await this.walletService.getOrCreatePendingWallet(user.id);

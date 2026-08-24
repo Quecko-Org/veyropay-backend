@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Address, Hex } from 'viem';
 import { PaginatedResultDto, PaginationQueryDto } from '@shared/dto';
 import { WalletStatus } from '@shared/enums';
@@ -11,27 +12,34 @@ import { SafeService } from '@integrations/safe/safe.service';
 import { buildExecuteUserOpCallData } from '@integrations/safe/safe-account.util';
 import { PimlicoService } from '@integrations/pimlico/pimlico.service';
 import { DEFAULT_ENTRY_POINT, DUMMY_SIGNATURE } from '@integrations/pimlico/constants';
+import { IPimlicoConfig } from '@core/config/pimlico.config';
 import { WalletRepository } from './repositories/wallet.repository';
+import { GasSponsorshipRepository } from './repositories/gas-sponsorship.repository';
 import { WalletEntity } from './entities/wallet.entity';
 import { PrepareUserOperationDto } from './dto/prepare-user-operation.dto';
 import { PreparedUserOperationDto } from './dto/prepared-user-operation.dto';
 import { BASE_CHAIN_ID } from './constants';
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const ONE_MONTH_MS = 30 * ONE_DAY_MS;
+
 @Injectable()
 export class WalletService {
+  private readonly pimlicoConfig: IPimlicoConfig;
+
   constructor(
     private readonly walletRepository: WalletRepository,
+    private readonly gasSponsorshipRepository: GasSponsorshipRepository,
     private readonly transactionService: TransactionService,
     private readonly profileService: ProfileService,
     private readonly turnkeyService: TurnkeyService,
     private readonly safeService: SafeService,
     private readonly pimlicoService: PimlicoService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.pimlicoConfig = configService.get<IPimlicoConfig>('pimlico') as IPimlicoConfig;
+  }
 
-  // Called during login/profile bootstrap so wallet creation is automatic and
-  // transparent per docs/02_PRODUCT_REQUIREMENTS.md - the row exists in
-  // PENDING_PROVIDER status immediately, the on-chain address is assigned once
-  // requestSmartAccountProvisioning() runs.
   async getOrCreatePendingWallet(userId: string): Promise<WalletEntity> {
     const existing = await this.walletRepository.findByUserId(userId);
     if (existing) {
@@ -60,12 +68,6 @@ export class WalletService {
     return wallet;
   }
 
-  // Owner (signer) is the Ethereum address Turnkey already provisioned for the
-  // user's sub-organization during client-side onboarding - the backend never
-  // creates key material, it only reads that address and predicts the
-  // corresponding counterfactual Safe address (single owner, threshold 1, with
-  // the Safe4337Module enabled for ERC-4337 support). Idempotent: safe to call
-  // again once already provisioned.
   async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
     const wallet = await this.getByUserId(userId);
     if (wallet.smartAccountAddress) {
@@ -95,10 +97,6 @@ export class WalletService {
     return this.walletRepository.save(wallet);
   }
 
-  // Fills in the fields the client cannot compute itself (nonce, deployment
-  // initCode, gas) for an unsigned ERC-4337 UserOperation. The client signs the
-  // result locally via Turnkey and submits it back through POST /transfer -
-  // the backend never holds or produces a signature.
   async prepareUserOperation(
     userId: string,
     dto: PrepareUserOperationDto,
@@ -139,31 +137,120 @@ export class WalletService {
         preVerificationGas: '0x0',
         maxFeePerGas: gasPrice.maxFeePerGas,
         maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
-        paymasterAndData: '0x',
+        paymaster: '0x',
+        paymasterData: '0x',
+        paymasterVerificationGasLimit: '0x0',
+        paymasterPostOpGasLimit: '0x0',
         signature: DUMMY_SIGNATURE,
       },
       DEFAULT_ENTRY_POINT,
     );
+
+    const roughEstimatedCost =
+      (BigInt(gasEstimate.callGasLimit) +
+        BigInt(gasEstimate.verificationGasLimit) +
+        BigInt(gasEstimate.preVerificationGas)) *
+      BigInt(gasPrice.maxFeePerGas);
+
+    const withinBackendCap = await this.isWithinGasSponsorshipCap(userId, roughEstimatedCost);
+
+    const sponsorship = withinBackendCap
+      ? await this.pimlicoService.sponsorUserOperation(
+          {
+            sender,
+            nonce: `0x${nonce.toString(16)}`,
+            initCode,
+            callData,
+            callGasLimit: gasEstimate.callGasLimit,
+            verificationGasLimit: gasEstimate.verificationGasLimit,
+            preVerificationGas: gasEstimate.preVerificationGas,
+            maxFeePerGas: gasPrice.maxFeePerGas,
+            maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
+            signature: DUMMY_SIGNATURE,
+          },
+          DEFAULT_ENTRY_POINT,
+        )
+      : null;
+
+    const callGasLimit = sponsorship?.callGasLimit ?? gasEstimate.callGasLimit;
+    const verificationGasLimit =
+      sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit;
+    const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
+
+    if (!sponsorship) {
+      const totalGas =
+        BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas);
+      const estimatedCost = totalGas * BigInt(gasPrice.maxFeePerGas);
+      const balance = await this.pimlicoService.getNativeBalance(sender);
+
+      if (balance < estimatedCost) {
+        throw new ConflictException(
+          'Insufficient gas balance - your sponsorship limit has been reached and your ' +
+            'wallet does not have enough balance to cover this transaction.',
+        );
+      }
+    } else {
+      const sponsoredCost =
+        (BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas)) *
+        BigInt(gasPrice.maxFeePerGas);
+      await this.gasSponsorshipRepository.save(
+        this.gasSponsorshipRepository.create({
+          userId,
+          amountWei: sponsoredCost.toString(),
+          chainId: wallet.chainId,
+        }),
+      );
+    }
 
     return new PreparedUserOperationDto({
       sender,
       nonce: `0x${nonce.toString(16)}`,
       initCode,
       callData,
-      callGasLimit: gasEstimate.callGasLimit,
-      verificationGasLimit: gasEstimate.verificationGasLimit,
-      preVerificationGas: gasEstimate.preVerificationGas,
+      callGasLimit,
+      verificationGasLimit,
+      preVerificationGas,
       maxFeePerGas: gasPrice.maxFeePerGas,
       maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
-      paymasterAndData: '0x',
+      paymaster: sponsorship?.paymaster ?? '0x',
+      paymasterData: sponsorship?.paymasterData ?? '0x',
+      paymasterVerificationGasLimit: sponsorship?.paymasterVerificationGasLimit ?? '0x0',
+      paymasterPostOpGasLimit: sponsorship?.paymasterPostOpGasLimit ?? '0x0',
       entryPoint: DEFAULT_ENTRY_POINT,
     });
   }
 
-  // Configurable N-of-M guardian recovery threshold - bounds-checked against the
-  // caller-supplied active guardian count (GuardianRecoveryModule owns the guardian
-  // list, so it computes that count and passes it in rather than WalletService
-  // depending on GuardianRepository).
+  private async isWithinGasSponsorshipCap(
+    userId: string,
+    estimatedCostWei: bigint,
+  ): Promise<boolean> {
+    const now = Date.now();
+
+    if (this.pimlicoConfig.userDailyGasCapWei) {
+      const dailyCap = BigInt(this.pimlicoConfig.userDailyGasCapWei);
+      const usedToday = await this.gasSponsorshipRepository.sumSince(
+        userId,
+        new Date(now - ONE_DAY_MS),
+      );
+      if (usedToday + estimatedCostWei > dailyCap) {
+        return false;
+      }
+    }
+
+    if (this.pimlicoConfig.userMonthlyGasCapWei) {
+      const monthlyCap = BigInt(this.pimlicoConfig.userMonthlyGasCapWei);
+      const usedThisMonth = await this.gasSponsorshipRepository.sumSince(
+        userId,
+        new Date(now - ONE_MONTH_MS),
+      );
+      if (usedThisMonth + estimatedCostWei > monthlyCap) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   async setGuardianThreshold(
     userId: string,
     threshold: number,

@@ -56,6 +56,10 @@ export const envValidationSchema = Joi.object({
   // Pimlico
   PIMLICO_API_BASE_URL: Joi.string().uri().required(),
   PIMLICO_API_KEY: Joi.string().required(),
+  PIMLICO_SPONSORSHIP_POLICY_ID: Joi.string().allow('').optional(),
+  GAS_SPONSORSHIP_USER_DAILY_CAP_WEI: Joi.string().allow('').optional(),
+  GAS_SPONSORSHIP_USER_MONTHLY_CAP_WEI: Joi.string().allow('').optional(),
+
 
   // 1inch
   ONEINCH_API_BASE_URL: Joi.string().uri().required(),
@@ -64,6 +68,12 @@ export const envValidationSchema = Joi.object({
   // LiFi
   LIFI_API_BASE_URL: Joi.string().uri().required(),
   LIFI_API_KEY: Joi.string().required(),
+  LIFI_INTEGRATOR_ID: Joi.string().allow('').optional(),
+
+
+  //swap
+  SWAP_FEE_PERCENTAGE: Joi.number().min(0).max(3).default(0),
+  SWAP_FEE_RECIPIENT_ADDRESS: Joi.string().allow('').optional(),
 
   // Sumsub
   SUMSUB_API_BASE_URL: Joi.string().uri().required(),

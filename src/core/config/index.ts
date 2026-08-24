@@ -9,6 +9,7 @@ export * from './safe.config';
 export * from './pimlico.config';
 export * from './oneinch.config';
 export * from './lifi.config';
+export * from './swap.config';
 export * from './sumsub.config';
 export * from './rain.config';
 export * from './baanx.config';

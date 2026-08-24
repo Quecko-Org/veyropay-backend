@@ -9,6 +9,7 @@ import safeConfig from './safe.config';
 import pimlicoConfig from './pimlico.config';
 import oneinchConfig from './oneinch.config';
 import lifiConfig from './lifi.config';
+import swapFeeConfig from './swap.config';
 import sumsubConfig from './sumsub.config';
 import rainConfig from './rain.config';
 import baanxConfig from './baanx.config';
@@ -34,6 +35,7 @@ import { envValidationSchema } from './env.validation';
         pimlicoConfig,
         oneinchConfig,
         lifiConfig,
+        swapFeeConfig,
         sumsubConfig,
         rainConfig,
         baanxConfig,

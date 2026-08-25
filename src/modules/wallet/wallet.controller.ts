@@ -13,7 +13,7 @@ import { PrepareUserOperationDto } from './dto/prepare-user-operation.dto';
 @Controller({ path: 'wallet', version: '1' })
 export class WalletController {
   constructor(private readonly walletService: WalletService) {}
-
+ 
   @Get()
   @ApiOperation({ summary: 'Get the authenticated user wallet' })
   getWallet(@CurrentUser() user: IJwtPayload) {

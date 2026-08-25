@@ -83,6 +83,8 @@ export class TurnkeyService {
   async findSubOrganizationByOidcToken(oidcToken: string): Promise<string | null> {
     try {
       const response = await this.client.getSubOrganizationIdsByOidcToken(oidcToken);
+            console.log("response",response.organizationIds[0] )
+
       return response.organizationIds[0] ?? null;
     } catch (error) {
       this.logger.warn({ err: error }, 'Turnkey sub-organization lookup by OIDC token failed');

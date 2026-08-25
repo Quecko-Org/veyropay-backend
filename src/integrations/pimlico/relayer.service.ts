@@ -6,7 +6,7 @@ import { ProviderException } from '@common/exceptions';
 import { IPimlicoConfig } from '@core/config/pimlico.config';
 import { PimlicoClient } from './pimlico.client';
 import { PIMLICO_PROVIDER_NAME } from './constants';
-
+import { ChainRpcClient } from '@integrations/chain-rpc/chain-rpc.client';
 // Backend-as-relayer for guardian recovery: a conventional EOA (distinct from the
 // ERC-4337 UserOperation path used everywhere else in this app) that signs and
 // broadcasts plain Ethereum transactions carrying already guardian-authorized recovery
@@ -21,6 +21,7 @@ export class RelayerService {
 
   constructor(
     private readonly client: PimlicoClient,
+    private readonly chainRpcClient: ChainRpcClient,
     configService: ConfigService,
   ) {
     this.config = configService.get<IPimlicoConfig>('pimlico') as IPimlicoConfig;
@@ -38,7 +39,7 @@ export class RelayerService {
       const account = privateKeyToAccount(this.config.relayerPrivateKey as Hex);
 
       const [nonceHex, gasPrice] = await Promise.all([
-        this.client.getTransactionCount(account.address),
+        this.chainRpcClient.getTransactionCount(account.address),
         this.client.getGasPrice(),
       ]);
 
@@ -57,7 +58,7 @@ export class RelayerService {
       };
 
       const signedTransaction = await account.signTransaction(transaction);
-      return (await this.client.sendRawTransaction(signedTransaction)) as Hex;
+      return (await this.chainRpcClient.sendRawTransaction(signedTransaction)) as Hex;
     } catch (error) {
       this.logger.warn({ err: error }, 'Relayer transaction submission failed');
       throw new ProviderException(

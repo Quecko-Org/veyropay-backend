@@ -15,7 +15,7 @@ import {
 } from './types';
 import { DEFAULT_ENTRY_POINT, PIMLICO_PROVIDER_NAME } from './constants';
 import { IPimlicoConfig } from '@core/config/pimlico.config';
-
+import { ChainRpcClient } from '@integrations/chain-rpc/chain-rpc.client';
 @Injectable()
 export class PimlicoService {
   private readonly logger = new Logger(PimlicoService.name);
@@ -24,7 +24,9 @@ export class PimlicoService {
 
   constructor(
     private readonly client: PimlicoClient,
+   private readonly chainRpcClient: ChainRpcClient,
     private readonly safeService: SafeService,
+    
     configService: ConfigService,
   ) {
     this.config = configService.get<IPimlicoConfig>('pimlico') as IPimlicoConfig;
@@ -69,7 +71,8 @@ export class PimlicoService {
 
   async isContractDeployed(address: Address): Promise<boolean> {
     try {
-      const code = await this.client.getCode(address);
+      const code = await this.chainRpcClient.getCode(address);
+      console.log("cod ssssse",code)
       return Boolean(code) && code !== '0x';
     } catch (error) {
       this.logger.warn({ err: error }, 'Pimlico getCode lookup failed');
@@ -95,7 +98,10 @@ export class PimlicoService {
     entryPoint: string = DEFAULT_ENTRY_POINT,
   ): Promise<bigint> {
     try {
-      const result = await this.client.ethCall(entryPoint, buildGetNonceCallData(accountAddress));
+      const result = await this.chainRpcClient.ethCall(entryPoint, buildGetNonceCallData(accountAddress));
+      console.log(" get account nonce",result,accountAddress)
+            console.log(" get account = buildGetNonceCallData(accountAddress)", buildGetNonceCallData(accountAddress))
+
       return decodeFunctionResult({
         abi: ENTRY_POINT_GET_NONCE_ABI,
         functionName: 'getNonce',
@@ -109,7 +115,7 @@ export class PimlicoService {
 
   async getSocialRecoveryNonce(safeAddress: Address): Promise<bigint> {
     try {
-      const result = await this.client.ethCall(
+      const result = await this.chainRpcClient.ethCall(
         this.safeService.getRecoveryModuleAddress(),
         this.safeService.buildRecoveryNonceCallData(safeAddress),
       );
@@ -127,7 +133,7 @@ export class PimlicoService {
   async getRecoveryHash(safeAddress: Address, newOwnerAddress: Address): Promise<`0x${string}`> {
     try {
       const nonce = await this.getSocialRecoveryNonce(safeAddress);
-      const result = await this.client.ethCall(
+      const result = await this.chainRpcClient.ethCall(
         this.safeService.getRecoveryModuleAddress(),
         this.safeService.buildGetRecoveryHashCallData(safeAddress, newOwnerAddress, nonce),
       );
@@ -163,7 +169,7 @@ export class PimlicoService {
 
   async getNativeBalance(address: Address): Promise<bigint> {
     try {
-      const result = await this.client.getBalance(address);
+      const result = await this.chainRpcClient.getBalance(address);
       return BigInt(result);
     } catch (error) {
       this.logger.warn({ err: error }, 'Pimlico native balance lookup failed');

@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Address, Hex } from 'viem';
+import { Address, getAddress, Hex } from 'viem';
 import { PaginatedResultDto, PaginationQueryDto } from '@shared/dto';
 import { WalletStatus } from '@shared/enums';
 import { TransactionService } from '@modules/transaction/transaction.service';
@@ -68,34 +68,42 @@ export class WalletService {
     return wallet;
   }
 
-  async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
-    const wallet = await this.getByUserId(userId);
-    if (wallet.smartAccountAddress) {
-      return wallet;
-    }
+ async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
+  const wallet = await this.getByUserId(userId);
+  console.log('EXISTING WALLET ROW', wallet.ownerAddress, wallet.smartAccountAddress);
 
-    const organizationId = await this.profileService.getProviderReference(
-      userId,
-      TURNKEY_ORGANIZATION_PROVIDER_KEY,
-    );
-
-    if (!organizationId) {
-      throw new ConflictException(
-        'Turnkey organization is not linked for this user yet - log in again first',
-      );
-    }
-
-    const ownerAddress = (await this.turnkeyService.getPrimarySignerAddress(
-      organizationId,
-    )) as Address;
-    const smartAccountAddress = await this.safeService.predictAddress(ownerAddress);
-
-    wallet.ownerAddress = ownerAddress;
-    wallet.smartAccountAddress = smartAccountAddress;
-    wallet.status = WalletStatus.ACTIVE;
-
-    return this.walletRepository.save(wallet);
+  if (wallet.smartAccountAddress) {
+    console.log('EARLY RETURN - already provisioned, not recomputing');
+    return wallet;
   }
+
+  const organizationId = await this.profileService.getProviderReference(
+    userId,
+    TURNKEY_ORGANIZATION_PROVIDER_KEY,
+  );
+  console.log('ORGANIZATION ID USED', organizationId);
+
+  if (!organizationId) {
+    throw new ConflictException(
+      'Turnkey organization is not linked for this user yet - log in again first',
+    );
+  }
+
+  const ownerAddress = (await this.turnkeyService.getPrimarySignerAddress(
+    organizationId,
+  )) as Address;
+  console.log('FRESH OWNER ADDRESS FROM TURNKEY', ownerAddress);
+
+  const smartAccountAddress = await this.safeService.predictAddress(ownerAddress);
+  console.log('PREDICTED SAFE ADDRESS', smartAccountAddress);
+
+  wallet.ownerAddress = ownerAddress;
+  wallet.smartAccountAddress = smartAccountAddress;
+  wallet.status = WalletStatus.ACTIVE;
+
+  return this.walletRepository.save(wallet);
+}
+
 
   async prepareUserOperation(
     userId: string,
@@ -116,80 +124,145 @@ export class WalletService {
       this.pimlicoService.getGasPrice(),
     ]);
 
-    let initCode: Hex = '0x';
+    console.log("deployed, nonce, gasPrice", deployed, nonce, gasPrice)
+
+    // EntryPoint v0.7 has no single `initCode` field (that's v0.6) - deployment is
+    // expressed as separate `factory`/`factoryData` fields instead, present only when
+    // the account isn't deployed yet. Sending `initCode` gets Pimlico's schema
+    // validator to reject the whole call ("Unrecognized key: initCode").
+    let factory: Address | undefined;
+    let factoryData: Hex | undefined;
     if (!deployed) {
       const deploymentTx = await this.safeService.buildDeploymentTransaction(
         wallet.ownerAddress as Address,
       );
-      initCode = (deploymentTx.to + deploymentTx.data.slice(2)) as Hex;
+      factory = deploymentTx.to;
+      factoryData = deploymentTx.data;
     }
+    const factoryFields = factory && factoryData ? { factory, factoryData } : {};
 
-    const callData = buildExecuteUserOpCallData(dto.to as Address, value, data);
+    const callData = buildExecuteUserOpCallData(getAddress(dto.to), value, data);
+    console.log("deployfactoryField", factoryFields, callData)
 
-    const gasEstimate = await this.pimlicoService.estimateGas(
+    // Attempt sponsorship FIRST, before any plain (paymaster-free) gas estimate.
+    // pm_sponsorUserOperation both estimates gas AND returns paymaster data in one
+    // call, and it has to come first: EntryPoint's simulation requires the sender to
+    // be able to pay the UserOp's own prefund when no paymaster is attached, and
+    // reverts with "AA21 didn't pay prefund" otherwise. A brand-new, zero-balance smart
+    // account - exactly the case sponsored lazy deployment exists for - can never
+    // satisfy that, so a plain unsponsored estimate can't be the primary path here.
+    // PimlicoService.sponsorUserOperation returns null (not a throw) on decline/failure.
+    const sponsorshipAttempt = await this.pimlicoService.sponsorUserOperation(
       {
         sender,
         nonce: `0x${nonce.toString(16)}`,
-        initCode,
+        ...factoryFields,
         callData,
         callGasLimit: '0x0',
         verificationGasLimit: '0x0',
         preVerificationGas: '0x0',
         maxFeePerGas: gasPrice.maxFeePerGas,
         maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
-        paymaster: '0x',
-        paymasterData: '0x',
-        paymasterVerificationGasLimit: '0x0',
-        paymasterPostOpGasLimit: '0x0',
         signature: DUMMY_SIGNATURE,
       },
       DEFAULT_ENTRY_POINT,
     );
 
-    const roughEstimatedCost =
-      (BigInt(gasEstimate.callGasLimit) +
-        BigInt(gasEstimate.verificationGasLimit) +
-        BigInt(gasEstimate.preVerificationGas)) *
-      BigInt(gasPrice.maxFeePerGas);
+    let gasEstimate: Record<string, string>;
+    let sponsorship: typeof sponsorshipAttempt = null;
+    console.log("sponsorshipAttempt gasEstimate", sponsorshipAttempt, sponsorship,)
 
-    const withinBackendCap = await this.isWithinGasSponsorshipCap(userId, roughEstimatedCost);
+    if (sponsorshipAttempt) {
 
-    const sponsorship = withinBackendCap
-      ? await this.pimlicoService.sponsorUserOperation(
+      // These gas numbers are valid execution-gas estimates regardless of whether the
+      // backend cap check below ends up accepting or declining Pimlico's paymaster offer.
+      gasEstimate = {
+        callGasLimit: sponsorshipAttempt.callGasLimit,
+        verificationGasLimit: sponsorshipAttempt.verificationGasLimit,
+        preVerificationGas: sponsorshipAttempt.preVerificationGas,
+      };
+
+      // Backend-enforced cap check, independent of Pimlico's own Sponsorship Policy -
+      // see IPimlicoConfig.userDailyGasCapWei/userMonthlyGasCapWei. Both checks apply;
+      // whichever is stricter wins, since either one can decline sponsorship.
+      const sponsoredCost =
+        (BigInt(sponsorshipAttempt.callGasLimit) +
+          BigInt(sponsorshipAttempt.verificationGasLimit) +
+          BigInt(sponsorshipAttempt.preVerificationGas)) *
+        BigInt(gasPrice.maxFeePerGas);
+
+      const withinBackendCap = await this.isWithinGasSponsorshipCap(userId, sponsoredCost);
+      if (withinBackendCap) {
+        sponsorship = sponsorshipAttempt;
+      }
+      console.log("if ", sponsorshipAttempt, gasEstimate, withinBackendCap)
+
+
+
+    } else {
+      try {
+        gasEstimate = await this.pimlicoService.estimateGas(
           {
             sender,
             nonce: `0x${nonce.toString(16)}`,
-            initCode,
+            ...factoryFields,
             callData,
-            callGasLimit: gasEstimate.callGasLimit,
-            verificationGasLimit: gasEstimate.verificationGasLimit,
-            preVerificationGas: gasEstimate.preVerificationGas,
+            callGasLimit: '0x0',
+            verificationGasLimit: '0x0',
+            preVerificationGas: '0x0',
             maxFeePerGas: gasPrice.maxFeePerGas,
             maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
             signature: DUMMY_SIGNATURE,
           },
           DEFAULT_ENTRY_POINT,
-        )
-      : null;
+        );
+      } catch (err){
+        console.log("Asss",err)
+        // Sponsorship was declined and the sender can't cover its own prefund either
+        // (EntryPoint's AA21 revert) - same outcome as the balance check below, just
+        // discovered earlier, during simulation instead of a separate balance query.
+        throw new ConflictException(
+          'Insufficient gas balance - your sponsorship limit has been reached and your ' +
+          'wallet does not have enough balance to cover this transaction.',
+        );
+      }
+    }
 
     const callGasLimit = sponsorship?.callGasLimit ?? gasEstimate.callGasLimit;
     const verificationGasLimit =
       sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit;
     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
+    console.log("else gasEstimate", gasEstimate, callGasLimit, verificationGasLimit, preVerificationGas)
 
     if (!sponsorship) {
+      console.log("!sponsorship", sponsorship)
+
+      // Sponsorship declined (backend cap, Pimlico's policy cap, or otherwise) - the
+      // Safe pays its own gas. Check upfront rather than letting the client sign a
+      // UserOp that fails on-chain.
       const totalGas =
         BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas);
       const estimatedCost = totalGas * BigInt(gasPrice.maxFeePerGas);
       const balance = await this.pimlicoService.getNativeBalance(sender);
+      console.log("!totalGas", totalGas, estimatedCost, balance)
 
       if (balance < estimatedCost) {
         throw new ConflictException(
           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
-            'wallet does not have enough balance to cover this transaction.',
+          'wallet does not have enough balance to cover this transaction.',
         );
       }
+      console.log("!balance < estimatedCost", balance < estimatedCost)
+
     } else {
+      // Sponsorship granted - record it against the backend cap. Recorded at
+      // prepare-time (not after actual on-chain confirmation) since this is what's
+      // being committed to sponsor; a minor over-count from abandoned/unsigned
+      // prepares is an acceptable tradeoff for a safety cap, not a billing ledger.
+
+      console.log("!belse sponsoredCost")
+      
+
       const sponsoredCost =
         (BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas)) *
         BigInt(gasPrice.maxFeePerGas);
@@ -200,12 +273,15 @@ export class WalletService {
           chainId: wallet.chainId,
         }),
       );
+      console.log("!belse sponsoredCost", sponsoredCost)
+
     }
 
     return new PreparedUserOperationDto({
       sender,
       nonce: `0x${nonce.toString(16)}`,
-      initCode,
+      factory,
+      factoryData,
       callData,
       callGasLimit,
       verificationGasLimit,
@@ -219,6 +295,151 @@ export class WalletService {
       entryPoint: DEFAULT_ENTRY_POINT,
     });
   }
+  //   async prepareUserOperation(
+  //     userId: string,
+  //     dto: PrepareUserOperationDto,
+  //   ): Promise<PreparedUserOperationDto> {
+  //     console.log("dddsd", dto)
+  //     const wallet = await this.getByUserId(userId);
+  //     if (!wallet.smartAccountAddress || !wallet.ownerAddress) {
+  //       throw new ConflictException('Smart account has not been provisioned yet');
+  //     }
+
+  //     const sender = wallet.smartAccountAddress as Address;
+  //     const value = BigInt(dto.value ?? '0');
+  //     const data = (dto.data ?? '0x') as Hex;
+  //     console.log("sender", sender, wallet)
+  //     const [deployed, nonce, gasPrice] = await Promise.all([
+  //       this.pimlicoService.isContractDeployed(sender),
+  //       this.pimlicoService.getAccountNonce(sender),
+  //       this.pimlicoService.getGasPrice(),
+  //     ]);
+  //     console.log("promise all", deployed, nonce, gasPrice)
+
+  //     let factory: Address | undefined;
+  //     let factoryData: Hex | undefined;
+  //     if (!deployed) {
+  //       const deploymentTx = await this.safeService.buildDeploymentTransaction(
+  //         wallet.ownerAddress as Address,
+  //       );
+  //       console.log("deploymentTx", deploymentTx)
+  //       factory = deploymentTx.to;
+  //       factoryData = deploymentTx.data;
+  //     }
+  //     const factoryFields = factory && factoryData ? { factory, factoryData } : {};
+  //     const callData = buildExecuteUserOpCallData(getAddress(dto.to), value, data);
+  //     console.log("payload",{sender,
+  //         nonce: `0x${nonce.toString(16)}`,
+  //         ...factoryFields,
+  //         callData,
+  //         callGasLimit: '0x0',
+  //         verificationGasLimit: '0x0',
+  //         preVerificationGas: '0x0',
+  //         maxFeePerGas: gasPrice.maxFeePerGas,
+  //         maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
+
+  //         "paymaster": null,
+  //       "paymasterVerificationGasLimit": null,
+  //       "paymasterPostOpGasLimit": null,
+  //       "paymasterData": null,
+  //         signature: DUMMY_SIGNATURE,})
+  //     const gasEstimate = await this.pimlicoService.estimateGas(
+  //       {
+  //         sender,
+  //         nonce: `0x${nonce.toString(16)}`,
+  //         ...factoryFields,
+  //         callData,
+  //         callGasLimit: '0x0',
+  //         verificationGasLimit: '0x0',
+  //         preVerificationGas: '0x0',
+  //         maxFeePerGas: gasPrice.maxFeePerGas,
+  //         maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
+  //         // paymaster: '0x',
+  //         // paymasterData: '0x',
+  //         // paymasterVerificationGasLimit: '0x0',
+  //         // paymasterPostOpGasLimit: '0x0',
+  //         signature: DUMMY_SIGNATURE,
+  //       },
+  //       DEFAULT_ENTRY_POINT,
+  //     );
+  //     console.log("gasEstimate", gasEstimate)
+  //     const roughEstimatedCost =
+  //       (BigInt(gasEstimate.callGasLimit) +
+  //         BigInt(gasEstimate.verificationGasLimit) +
+  //         BigInt(gasEstimate.preVerificationGas)) *
+  //       BigInt(gasPrice.maxFeePerGas);
+  //     console.log("roughEstimatedCost", roughEstimatedCost)
+
+  //     const withinBackendCap = await this.isWithinGasSponsorshipCap(userId, roughEstimatedCost);
+  //     console.log("withinBackendCap", roughEstimatedCost)
+
+  //     const sponsorship = withinBackendCap
+  //       ? await this.pimlicoService.sponsorUserOperation(
+  //         {
+  //           sender,
+  //           nonce: `0x${nonce.toString(16)}`,
+  //           ...factoryFields,
+  //           callData,
+  //           callGasLimit: gasEstimate.callGasLimit,
+  //           verificationGasLimit: gasEstimate.verificationGasLimit,
+  //           preVerificationGas: gasEstimate.preVerificationGas,
+  //           maxFeePerGas: gasPrice.maxFeePerGas,
+  //           maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
+  //           signature: DUMMY_SIGNATURE,
+  //         },
+  //         DEFAULT_ENTRY_POINT,
+  //       )
+  //       : null;
+  //     console.log("sponsorship", sponsorship)
+
+  //     const callGasLimit = sponsorship?.callGasLimit ?? gasEstimate.callGasLimit;
+  //     const verificationGasLimit =
+  //       sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit;
+  //     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
+
+  //     if (!sponsorship) {
+  //       const totalGas =
+  //         BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas);
+  //       const estimatedCost = totalGas * BigInt(gasPrice.maxFeePerGas);
+  //       const balance = await this.pimlicoService.getNativeBalance(sender);
+
+  //       if (balance < estimatedCost) {
+  //         throw new ConflictException(
+  //           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
+  //           'wallet does not have enough balance to cover this transaction.',
+  //         );
+  //       }
+  //     } else {
+  //       const sponsoredCost =
+  //         (BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas)) *
+  //         BigInt(gasPrice.maxFeePerGas);
+  //       await this.gasSponsorshipRepository.save(
+  //         this.gasSponsorshipRepository.create({
+  //           userId,
+  //           amountWei: sponsoredCost.toString(),
+  //           chainId: wallet.chainId,
+  //         }),
+  //       );
+  //     }
+  // console.log("sponsorship",sponsorship)
+  //     return new PreparedUserOperationDto({
+  //       sender,
+  //       nonce: `0x${nonce.toString(16)}`,
+  //       factory,
+  //       factoryData,
+  //       callData,
+  //       callGasLimit,
+  //       verificationGasLimit,
+  //       preVerificationGas,
+  //       maxFeePerGas: gasPrice.maxFeePerGas,
+  //       maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
+  //       paymaster: sponsorship?.paymaster ?? '0x',
+  //       paymasterData: sponsorship?.paymasterData ?? '0x',
+  //       paymasterVerificationGasLimit: sponsorship?.paymasterVerificationGasLimit ?? '0x0',
+  //       paymasterPostOpGasLimit: sponsorship?.paymasterPostOpGasLimit ?? '0x0',
+  //       entryPoint: DEFAULT_ENTRY_POINT,
+  //     });
+  //   }
 
   private async isWithinGasSponsorshipCap(
     userId: string,

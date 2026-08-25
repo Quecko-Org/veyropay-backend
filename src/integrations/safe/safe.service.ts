@@ -98,6 +98,7 @@ export class SafeService {
     try {
       const kit = await this.getPredictedKit(ownerAddress);
       const tx = await kit.createSafeDeploymentTransaction();
+      console.log("kit tx",kit,tx)
       return { to: tx.to as Address, value: BigInt(tx.value), data: tx.data as Hex };
     } catch (error) {
       this.logger.warn({ err: error }, 'Safe deployment transaction encoding failed');

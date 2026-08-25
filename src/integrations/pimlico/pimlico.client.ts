@@ -33,13 +33,7 @@ export class PimlicoClient {
     return this.rpcCall('eth_estimateUserOperationGas', [userOperation, entryPoint]);
   }
 
-  async ethCall(to: string, data: string): Promise<string> {
-    return this.rpcCall<string>('eth_call', [{ to, data }, 'latest']);
-  }
 
-  async getCode(address: string): Promise<string> {
-    return this.rpcCall<string>('eth_getCode', [address, 'latest']);
-  }
 
   async getGasPrice(): Promise<IPimlicoGasPriceResponse> {
     return this.rpcCall<IPimlicoGasPriceResponse>('pimlico_getUserOperationGasPrice', []);
@@ -57,23 +51,10 @@ export class PimlicoClient {
     ]);
   }
 
-  async getBalance(address: string): Promise<string> {
-    return this.rpcCall<string>('eth_getBalance', [address, 'latest']);
-  }
-
-  async getTransactionCount(address: string): Promise<string> {
-    return this.rpcCall<string>('eth_getTransactionCount', [address, 'pending']);
-  }
-
-  async sendRawTransaction(signedTransaction: string): Promise<string> {
-    return this.rpcCall<string>('eth_sendRawTransaction', [signedTransaction]);
-  }
-
-  async chainId(): Promise<string> {
-    return this.rpcCall<string>('eth_chainId', []);
-  }
+ 
 
   private async rpcCall<T>(method: string, params: unknown[]): Promise<T> {
+    console.log("rpcCall gas",method,params)
     const response = await this.request<IJsonRpcResponse<T>>('', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -88,6 +69,7 @@ export class PimlicoClient {
   }
 
   protected async request<T>(path: string, init?: RequestInit): Promise<T> {
+    console.log("request",path,init,`${this.config.baseUrl}${path}`)
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
 

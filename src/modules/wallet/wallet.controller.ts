@@ -25,13 +25,13 @@ export class WalletController {
   provision(@CurrentUser() user: IJwtPayload) {
     return this.walletService.requestSmartAccountProvisioning(user.sub);
   }
-
+ 
   @Post('user-operations/prepare')
   @ApiOperation({ summary: 'Prepare an unsigned UserOperation for the client to sign' })
   prepareUserOperation(@CurrentUser() user: IJwtPayload, @Body() dto: PrepareUserOperationDto) {
     return this.walletService.prepareUserOperation(user.sub, dto);
   }
-
+ 
   @Get('transactions')
   @ApiOperation({ summary: 'List transactions for the authenticated user wallet' })
   listTransactions(@CurrentUser() user: IJwtPayload, @Query() query: PaginationQueryDto) {

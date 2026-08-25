@@ -91,8 +91,9 @@ export class AuthService {
   // See docs.turnkey.com/features/authentication/social-logins.
   async oauthLogin(dto: OauthLoginDto): Promise<OauthLoginResultDto> {
     let organizationId = await this.turnkeyService.findSubOrganizationByOidcToken(dto.oidcToken);
-console.log("after findSubOrganizationByOidcToken ,organizationId",organizationId)
+ console.log('OAUTH LOOKUP RESULT', organizationId);   // <-- add this
     if (!organizationId) {
+        console.log('NO MATCH - creating new sub-org');       // <-- add this
       const result = await this.turnkeyService.provisionSubOrganization({
         subOrganizationName: `${dto.userName ?? dto.providerName} organization`,
         rootUsers: [
@@ -111,8 +112,8 @@ console.log("after findSubOrganizationByOidcToken ,organizationId",organizationI
         },
       });
       organizationId = result.subOrganizationId;
-      console.log("result",result,organizationId)
 
+    console.log('NEW SUB-ORG CREATED', organizationId);   // <-- add this
     }
     console.log("loginnn",organizationId)
     const loginResult = await this.turnkeyService.loginWithOauth(organizationId, {

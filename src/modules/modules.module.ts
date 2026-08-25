@@ -15,7 +15,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 
 // Aggregates every business module so app.module.ts only imports this one module.
 @Module({
-  imports: [
+  imports: [ 
     AuthModule,
     ProfileModule,
     WalletModule,

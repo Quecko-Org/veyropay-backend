@@ -103,7 +103,7 @@ export class PimlicoService {
             console.log(" get account = buildGetNonceCallData(accountAddress)", buildGetNonceCallData(accountAddress))
 
       return decodeFunctionResult({
-        abi: ENTRY_POINT_GET_NONCE_ABI,
+        abi: ENTRY_POINT_GET_NONCE_ABI, 
         functionName: 'getNonce',
         data: result as `0x${string}`,
       });

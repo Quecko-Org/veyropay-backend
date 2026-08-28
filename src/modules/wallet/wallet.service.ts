@@ -50,13 +50,17 @@ export class WalletService {
     return this.walletRepository.save(wallet);
   }
 
-  async getByUserId(userId: string): Promise<WalletEntity> {
+  async getByUserId(userId: string): Promise<WalletEntity & { turnkeyOrganizationId: string | null }> {
     const wallet = await this.walletRepository.findByUserId(userId);
     if (!wallet) {
       throw new NotFoundException('Wallet not found');
     }
-
-    return wallet;
+    const turnkeyOrganizationId = await this.profileService.getProviderReference(
+      userId,
+      TURNKEY_ORGANIZATION_PROVIDER_KEY,
+    );
+  
+    return { ...wallet, turnkeyOrganizationId };
   }
 
   async getById(walletId: string): Promise<WalletEntity> {

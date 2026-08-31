@@ -35,19 +35,19 @@ export class PreparedUserOperationDto {
   maxPriorityFeePerGas!: string;
 
   @ApiProperty({ description: '0x if unsponsored' })
-  paymaster!: string;
+  paymaster?: string  | undefined;
 
   @ApiProperty({ description: '0x if unsponsored' })
-  paymasterData!: string;
+  paymasterData?: string  | undefined;
 
   @ApiProperty()
-  paymasterVerificationGasLimit!: string;
+  paymasterVerificationGasLimit?: string | undefined;
 
   @ApiProperty()
-  paymasterPostOpGasLimit!: string;
+  paymasterPostOpGasLimit?: string  | undefined;
 
   @ApiProperty()
-  entryPoint!: string;
+  entryPoint?: string;
 
   constructor(partial: PreparedUserOperationDto) {
     Object.assign(this, partial);

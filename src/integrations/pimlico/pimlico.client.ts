@@ -38,7 +38,7 @@ export class PimlicoClient {
   async getGasPrice(): Promise<IPimlicoGasPriceResponse> {
     return this.rpcCall<IPimlicoGasPriceResponse>('pimlico_getUserOperationGasPrice', []);
   }
-
+ 
   async sponsorUserOperation(
     userOperation: IUserOperation,
     entryPoint: string,
@@ -62,7 +62,7 @@ export class PimlicoClient {
     });
 
     if (response.error) {
-      throw new Error(`Pimlico RPC error (${response.error.code}): ${response.error.message}`);
+      throw new Error(`Pimlico RPC error ${method} (${response.error.code}): ${response.error.message}`);
     }
 
     return response.result as T;

@@ -119,6 +119,7 @@ export class WalletService {
     }
 
     const sender = wallet.smartAccountAddress as Address;
+    console.log("sender",sender)
     const value = BigInt(dto.value ?? '0');
     const data = (dto.data ?? '0x') as Hex;
 
@@ -292,11 +293,17 @@ export class WalletService {
       preVerificationGas,
       maxFeePerGas: gasPrice.maxFeePerGas,
       maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
-      paymaster: sponsorship?.paymaster ?? '0x',
-      paymasterData: sponsorship?.paymasterData ?? '0x',
-      paymasterVerificationGasLimit: sponsorship?.paymasterVerificationGasLimit ?? '0x0',
-      paymasterPostOpGasLimit: sponsorship?.paymasterPostOpGasLimit ?? '0x0',
-      entryPoint: DEFAULT_ENTRY_POINT,
+      ...(sponsorship
+        ? {
+            paymaster: sponsorship.paymaster,
+            paymasterData: sponsorship.paymasterData,
+            paymasterVerificationGasLimit:
+              sponsorship.paymasterVerificationGasLimit,
+            paymasterPostOpGasLimit:
+              sponsorship.paymasterPostOpGasLimit,
+          }
+        : {}),
+    
     });
   }
   //   async prepareUserOperation(

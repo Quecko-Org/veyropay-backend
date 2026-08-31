@@ -37,6 +37,7 @@ export class PimlicoService {
     entryPoint: string = DEFAULT_ENTRY_POINT,
   ): Promise<string> {
     try {
+      console.log("userOperation",userOperation)
       return await this.client.sendUserOperation(userOperation, entryPoint);
     } catch (error) {
       this.logger.warn({ err: error }, 'Pimlico UserOperation submission failed');

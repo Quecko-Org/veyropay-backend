@@ -98,7 +98,7 @@ export class AuthService {
         subOrganizationName: `${dto.userName ?? dto.providerName} organization`,
         rootUsers: [
           {
-            userName: dto.userName ?? dto.providerName,
+            userName: dto.userName ?? dto.userEmail?.slice(3),
             userEmail: dto.userEmail,
             apiKeys: [],
             authenticators: [],

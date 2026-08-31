@@ -39,7 +39,7 @@ export class AuthService {
     private readonly deviceSessionRepository: DeviceSessionRepository,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   // Creates a Turnkey sub-organization for a new user, registering their passkey
   // (and the ephemeral API key their client generated for this signup) as root-user
@@ -91,14 +91,14 @@ export class AuthService {
   // See docs.turnkey.com/features/authentication/social-logins.
   async oauthLogin(dto: OauthLoginDto): Promise<OauthLoginResultDto> {
     let organizationId = await this.turnkeyService.findSubOrganizationByOidcToken(dto.oidcToken);
- console.log('OAUTH LOOKUP RESULT', organizationId);   // <-- add this
+    console.log('OAUTH LOOKUP RESULT', organizationId);   // <-- add this
     if (!organizationId) {
-        console.log('NO MATCH - creating new sub-org');       // <-- add this
+      console.log('NO MATCH - creating new sub-org');       // <-- add this
       const result = await this.turnkeyService.provisionSubOrganization({
         subOrganizationName: `${dto.userName ?? dto.providerName} organization`,
         rootUsers: [
           {
-            userName: dto.userName ?? dto.userEmail?.slice(3),
+            userName: dto.userName ?? dto.userEmail,
             userEmail: dto.userEmail,
             apiKeys: [],
             authenticators: [],
@@ -113,15 +113,15 @@ export class AuthService {
       });
       organizationId = result.subOrganizationId;
 
-    console.log('NEW SUB-ORG CREATED', organizationId);   // <-- add this
+      console.log('NEW SUB-ORG CREATED', organizationId);   // <-- add this
     }
-    console.log("loginnn",organizationId)
+    console.log("loginnn", organizationId)
     const loginResult = await this.turnkeyService.loginWithOauth(organizationId, {
       organizationId,
       oidcToken: dto.oidcToken,
       publicKey: dto.apiPublicKey,
     });
-console.log("loginResult",loginResult)
+    console.log("loginResult", loginResult)
     return new OauthLoginResultDto({ sessionJwt: loginResult.session });
   }
 
@@ -134,7 +134,7 @@ console.log("loginResult",loginResult)
     const identity = await this.turnkeyService.verifySessionToken(dto.sessionJwt);
 
     const user = await this.profileService.findOrCreateByTurnkeyUserId(identity.userId, dto.email);
-console.log("user",user,dto)
+    console.log("user", user, dto)
     // Persisted so smart account provisioning can look up the user's Turnkey
     // sub-organization later without requiring the client to resend it.
     await this.profileService.setProviderReference(
@@ -142,7 +142,7 @@ console.log("user",user,dto)
       TURNKEY_ORGANIZATION_PROVIDER_KEY,
       identity.organizationId,
     );
-console.log("identity",identity)
+    console.log("identity", identity)
     // Wallet creation is automatic and transparent per docs/02_PRODUCT_REQUIREMENTS.md,
     // even though the on-chain smart account provider is still pending a decision.
     await this.walletService.getOrCreatePendingWallet(user.id);

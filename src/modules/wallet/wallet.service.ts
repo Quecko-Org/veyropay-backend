@@ -50,8 +50,14 @@ export class WalletService {
     return this.walletRepository.save(wallet);
   }
 
-  async getByUserId(userId: string): Promise<WalletEntity & { turnkeyOrganizationId: string | null }> {
-    const wallet = await this.walletRepository.findByUserId(userId);
+  async findByUserId(userId: string): Promise<WalletEntity | null> {
+    return this.walletRepository.findByUserId(userId);
+  }
+
+  async getByUserId(
+    userId: string,
+  ): Promise<WalletEntity & { turnkeyOrganizationId: string | null }> {
+    const wallet = await this.findByUserId(userId);
     if (!wallet) {
       throw new NotFoundException('Wallet not found');
     }

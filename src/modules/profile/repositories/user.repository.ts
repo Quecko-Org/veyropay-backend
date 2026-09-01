@@ -15,6 +15,9 @@ export class UserRepository extends BaseRepository<UserEntity> {
   }
 
   findByEmail(email: string): Promise<UserEntity | null> {
-    return this.repository.findOne({ where: { email } });
+    return this.repository
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = :email', { email: email.trim().toLowerCase() })
+      .getOne();
   }
 }

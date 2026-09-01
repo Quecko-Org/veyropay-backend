@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LoggerModule as PinoLoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
@@ -13,6 +13,8 @@ import { IAppConfig } from '@core/config/app.config';
         const isProduction = app.env === 'production';
 
         return {
+          // Nest 11 / path-to-regexp v8 requires a named wildcard (default `/*` warns).
+          forRoutes: [{ method: RequestMethod.ALL, path: '*splat' }],
           pinoHttp: {
             name: app.name,
             level: configService.get<string>('LOG_LEVEL') ?? 'info',

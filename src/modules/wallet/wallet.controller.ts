@@ -19,7 +19,7 @@ export class WalletController {
   getWallet(@CurrentUser() user: IJwtPayload) {
     return this.walletService.getByUserId(user.sub);
   }
-
+ 
   @Post('provision')
   @ApiOperation({ summary: 'Provision the on-chain smart account for the wallet' })
   provision(@CurrentUser() user: IJwtPayload) {

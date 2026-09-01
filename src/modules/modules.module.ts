@@ -11,6 +11,7 @@ import { TransactionModule } from './transaction/transaction.module';
 import { NotificationModule } from './notification/notification.module';
 import { SystemModule } from './system/system.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { AssetsModule } from './assests/assets.module';
 
 // Aggregates every business module so app.module.ts only imports this one module.
 @Module({
@@ -20,6 +21,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     WalletModule,
     TransferModule,
     SwapModule,
+    AssetsModule,
     CardModule,
     KycModule,
     TransactionModule,

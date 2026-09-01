@@ -3,6 +3,7 @@ export interface IOneinchQuoteRequest {
   src: string;
   dst: string;
   amount: string;
+  
 }
 
 export interface IOneinchQuoteResponse {

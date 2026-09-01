@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IProviderConfig } from '@shared/interfaces';
 import { ISwapFeeConfig } from '@core/config/swap.config';
-import { ILifiQuoteRequest, ILifiQuoteResponse } from './types';
+import { ILifiQuoteRequest, ILifiQuoteResponse, ILifiStatusResponse } from './types';
 
 @Injectable()
 export class LifiClient {
@@ -32,6 +32,25 @@ export class LifiClient {
     return this.request<ILifiQuoteResponse>(`/quote?${query}`);
   }
 
+  // ...inside the class, after getQuote:
+// Tracks the actual cross-chain bridge transfer, separate from the source-chain
+// transaction itself - see docs.li.fi/li.fi-api/li.fi-api/status-of-a-transaction.
+// Passing fromChain/toChain is optional but speeds up the lookup.
+async getStatus(
+  txHash: string,
+  fromChain?: string,
+  toChain?: string,
+): Promise<ILifiStatusResponse> {
+  const query = new URLSearchParams({ txHash });
+  if (fromChain) {
+    query.set('fromChain', fromChain);
+  }
+  if (toChain) {
+    query.set('toChain', toChain);
+  }
+
+  return this.request<ILifiStatusResponse>(`/status?${query}`);
+}
   protected async request<T>(path: string, init?: RequestInit): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
@@ -48,8 +67,8 @@ export class LifiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Lifi request failed with status ${response.status}`);
-      }
+        const errorBody = await response.text();
+        throw new Error(`Lifi request failed with status ${response.status}: ${errorBody}`);      }
 
       return (await response.json()) as T;
     } finally {

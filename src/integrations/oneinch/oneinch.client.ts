@@ -66,12 +66,14 @@ export class OneinchClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Oneinch request failed with status ${response.status}`);
-      }
+        const errorBody = await response.text();
 
+        throw new Error(`Lifi request failed with status ${response.status}: ${errorBody}`);      
+      }
+// console.log("request response",path,init,await response.json());
       return (await response.json()) as T;
     } finally {
       clearTimeout(timeout);
-    }
+    } 
   }
 }

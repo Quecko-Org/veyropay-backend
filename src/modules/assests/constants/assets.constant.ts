@@ -79,7 +79,7 @@ export const SUPPORTED_ASSETS: IAssetInfo[] = [
     chainId: 137,
     symbol: 'USDC',
     name: 'USD Coin',
-    address: '0x3c499c542c0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2EF5E3811e1192ce70d8cC03d5c3359',
+    address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
     decimals: 6,
     isNative: false,
     logoUrl: `${TRUST_WALLET_ASSETS_BASE_URL}/polygon/assets/0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359/logo.png`,

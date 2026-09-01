@@ -11,5 +11,6 @@ export * from './webhook-provider.enum';
 export * from './webhook-status.enum';
 export * from './device-session-status.enum';
 export * from './guardian-status.enum';
+export * from './guardian-relationship.enum';
 export * from './recovery-request-status.enum';
 export * from './recovery-approval-status.enum';

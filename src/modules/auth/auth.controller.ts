@@ -12,6 +12,7 @@ import { SignupDto } from './dto/signup.dto';
 import { SignupResultDto } from './dto/signup-result.dto';
 import { OauthLoginDto } from './dto/oauth-login.dto';
 import { OauthLoginResultDto } from './dto/oauth-login-result.dto';
+import { DevLoginDto } from './dto/dev-login.dto';
 
 @ApiTags('auth')
 @Controller({ path: 'auth', version: '1' })
@@ -38,6 +39,16 @@ export class AuthController {
   })
   oauthLogin(@Body() dto: OauthLoginDto): Promise<OauthLoginResultDto> {
     return this.authService.oauthLogin(dto);
+  }
+
+  @Post('dev-login')
+  @ApiOperation({
+    summary: '[DEV ONLY] Create or reuse a local user and mint a backend JWT',
+    description:
+      'Bypasses Turnkey/passkeys for local Swagger testing. Disabled outside development/test.',
+  })
+  devLogin(@Body() dto: DevLoginDto, @Req() req: Request): Promise<AuthTokensDto> {
+    return this.authService.devLogin(dto, { ipAddress: req.ip });
   }
 
   @Post('login')

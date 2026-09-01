@@ -178,22 +178,13 @@ export class PimlicoService {
     }
   }
 
-  async getTokenBalance(
-    tokenAddress: Address,
-    ownerAddress: string,
-  ): Promise<bigint> {
+  async getTokenBalance(tokenAddress: Address, ownerAddress: Address): Promise<bigint> {
     try {
-    const balance = await this.chainRpcClient.getTokenBalance(
-      tokenAddress,
-      ownerAddress,
-    );
-  
-    return  BigInt(balance);
-  }
- catch (error) {
-  this.logger.warn({ err: error }, 'Pimlico token balance lookup failed');
-  throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to check wallet balance');
-}
-
+      const balance = await this.chainRpcClient.getTokenBalance(tokenAddress, ownerAddress);
+      return BigInt(balance);
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Chain RPC token balance lookup failed');
+      throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to check token balance');
+    }
   }
 }

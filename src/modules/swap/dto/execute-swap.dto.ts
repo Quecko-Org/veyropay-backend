@@ -2,12 +2,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsObject, IsString } from 'class-validator';
 
 export class ExecuteSwapDto {
-  @ApiProperty({ example: 'base' })
+  @ApiProperty({ example: '8453', description: 'Numeric chain ID, e.g. 8453 for Base' })
   @IsString()
   @IsNotEmpty()
   fromChain!: string;
-
-  @ApiProperty({ example: 'base' })
+  
+  @ApiProperty({ example: '8453', description: 'Numeric chain ID, e.g. 8453 for Base' })
   @IsString()
   @IsNotEmpty()
   toChain!: string;

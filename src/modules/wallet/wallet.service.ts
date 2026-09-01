@@ -59,7 +59,7 @@ export class WalletService {
       userId,
       TURNKEY_ORGANIZATION_PROVIDER_KEY,
     );
-  
+
     return { ...wallet, turnkeyOrganizationId };
   }
 
@@ -72,41 +72,41 @@ export class WalletService {
     return wallet;
   }
 
- async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
-  const wallet = await this.getByUserId(userId);
-  console.log('EXISTING WALLET ROW', wallet.ownerAddress, wallet.smartAccountAddress);
+  async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
+    const wallet = await this.getByUserId(userId);
+    console.log('EXISTING WALLET ROW', wallet.ownerAddress, wallet.smartAccountAddress);
 
-  if (wallet.smartAccountAddress) {
-    console.log('EARLY RETURN - already provisioned, not recomputing');
-    return wallet;
-  }
+    if (wallet.smartAccountAddress) {
+      console.log('EARLY RETURN - already provisioned, not recomputing');
+      return wallet;
+    }
 
-  const organizationId = await this.profileService.getProviderReference(
-    userId,
-    TURNKEY_ORGANIZATION_PROVIDER_KEY,
-  );
-  console.log('ORGANIZATION ID USED', organizationId);
-
-  if (!organizationId) {
-    throw new ConflictException(
-      'Turnkey organization is not linked for this user yet - log in again first',
+    const organizationId = await this.profileService.getProviderReference(
+      userId,
+      TURNKEY_ORGANIZATION_PROVIDER_KEY,
     );
+    console.log('ORGANIZATION ID USED', organizationId);
+
+    if (!organizationId) {
+      throw new ConflictException(
+        'Turnkey organization is not linked for this user yet - log in again first',
+      );
+    }
+
+    const ownerAddress = (await this.turnkeyService.getPrimarySignerAddress(
+      organizationId,
+    )) as Address;
+    console.log('FRESH OWNER ADDRESS FROM TURNKEY', ownerAddress);
+
+    const smartAccountAddress = await this.safeService.predictAddress(ownerAddress);
+    console.log('PREDICTED SAFE ADDRESS', smartAccountAddress);
+
+    wallet.ownerAddress = ownerAddress;
+    wallet.smartAccountAddress = smartAccountAddress;
+    wallet.status = WalletStatus.ACTIVE;
+
+    return this.walletRepository.save(wallet);
   }
-
-  const ownerAddress = (await this.turnkeyService.getPrimarySignerAddress(
-    organizationId,
-  )) as Address;
-  console.log('FRESH OWNER ADDRESS FROM TURNKEY', ownerAddress);
-
-  const smartAccountAddress = await this.safeService.predictAddress(ownerAddress);
-  console.log('PREDICTED SAFE ADDRESS', smartAccountAddress);
-
-  wallet.ownerAddress = ownerAddress;
-  wallet.smartAccountAddress = smartAccountAddress;
-  wallet.status = WalletStatus.ACTIVE;
-
-  return this.walletRepository.save(wallet);
-}
 
 
   async prepareUserOperation(
@@ -123,12 +123,12 @@ export class WalletService {
 
 
 
-    console.log("sender",sender)
+    console.log("sender", sender)
 
 
     const value = BigInt(dto.value ?? '0');
     const data = (dto.data ?? '0x') as Hex;
-await this.validateTransferBalance(sender, dto);
+    await this.validateTransferBalance(sender, dto);
 
     const [deployed, nonce, gasPrice] = await Promise.all([
       this.pimlicoService.isContractDeployed(sender),
@@ -228,8 +228,8 @@ await this.validateTransferBalance(sender, dto);
           },
           DEFAULT_ENTRY_POINT,
         );
-      } catch (err){
-        console.log("Asss",err)
+      } catch (err) {
+        console.log("Asss", err)
         // Sponsorship was declined and the sender can't cover its own prefund either
         // (EntryPoint's AA21 revert) - same outcome as the balance check below, just
         // discovered earlier, during simulation instead of a separate balance query.
@@ -273,7 +273,7 @@ await this.validateTransferBalance(sender, dto);
       // prepares is an acceptable tradeoff for a safety cap, not a billing ledger.
 
       console.log("!belse sponsoredCost")
-      
+
 
       const sponsoredCost =
         (BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas)) *
@@ -302,15 +302,15 @@ await this.validateTransferBalance(sender, dto);
       maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
       ...(sponsorship
         ? {
-            paymaster: sponsorship.paymaster,
-            paymasterData: sponsorship.paymasterData,
-            paymasterVerificationGasLimit:
-              sponsorship.paymasterVerificationGasLimit,
-            paymasterPostOpGasLimit:
-              sponsorship.paymasterPostOpGasLimit,
-          }
+          paymaster: sponsorship.paymaster,
+          paymasterData: sponsorship.paymasterData,
+          paymasterVerificationGasLimit:
+            sponsorship.paymasterVerificationGasLimit,
+          paymasterPostOpGasLimit:
+            sponsorship.paymasterPostOpGasLimit,
+        }
         : {}),
-    
+
     });
   }
 
@@ -318,38 +318,26 @@ await this.validateTransferBalance(sender, dto);
     sender: Address,
     dto: PrepareUserOperationDto,
   ): Promise<void> {
-  
-    // Native ETH transfer
     if (!dto.tokenAddress) {
       const amount = BigInt(dto.value ?? '0');
-  
       const balance = await this.pimlicoService.getNativeBalance(sender);
   
       if (balance < amount) {
-        throw new ConflictException(
-          'Insufficient ETH balance for transfer',
-        );
+        throw new ConflictException('Insufficient ETH balance for transfer');
       }
   
       return;
     }
   
-    // ERC20 transfer
     const tokenAddress = getAddress(dto.tokenAddress);
-    const transferAmount = BigInt(dto.value ?? '0');
-  
-    const balance = await this.pimlicoService.getTokenBalance(
-      tokenAddress,sender
-    );
+    const transferAmount = BigInt(dto.tokenAmount ?? '0');
+    const balance = await this.pimlicoService.getTokenBalance(tokenAddress, sender);
   
     if (balance < transferAmount) {
-      throw new ConflictException(
-        'Insufficient token balance for transfer',
-      );
+      throw new ConflictException('Insufficient token balance for transfer');
     }
   }
 
-  
   //   async prepareUserOperation(
   //     userId: string,
   //     dto: PrepareUserOperationDto,

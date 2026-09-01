@@ -26,7 +26,7 @@ export class OneinchService {
   async getQuote(request: IOneinchQuoteRequest): Promise<IOneinchQuoteResponse> {
     try {
       return await this.client.getQuote(request);
-    } catch (error) {
+    } catch (error) { 
       this.logger.warn({ err: error }, '1inch quote request failed');
       throw new ProviderException(
         ONEINCH_PROVIDER_NAME,

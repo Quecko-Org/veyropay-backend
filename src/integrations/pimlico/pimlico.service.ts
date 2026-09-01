@@ -177,4 +177,23 @@ export class PimlicoService {
       throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to check wallet balance');
     }
   }
+
+  async getTokenBalance(
+    tokenAddress: Address,
+    ownerAddress: string,
+  ): Promise<bigint> {
+    try {
+    const balance = await this.chainRpcClient.getTokenBalance(
+      tokenAddress,
+      ownerAddress,
+    );
+  
+    return  BigInt(balance);
+  }
+ catch (error) {
+  this.logger.warn({ err: error }, 'Pimlico token balance lookup failed');
+  throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to check wallet balance');
+}
+
+  }
 }

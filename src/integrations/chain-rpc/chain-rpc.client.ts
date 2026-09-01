@@ -1,6 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ISafeConfig } from '@core/config/safe.config';
+import { encodeFunctionData, decodeFunctionResult } from 'viem';
+
+const ERC20_ABI = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
 
 // Plain standard Ethereum JSON-RPC client (eth_call, eth_getCode, eth_getBalance,
 // eth_getTransactionCount, eth_sendRawTransaction, eth_chainId). Pimlico's bundler/
@@ -30,6 +42,30 @@ export class ChainRpcClient {
   async getBalance(address: string): Promise<string> {
     return this.rpcCall<string>('eth_getBalance', [address, 'latest']);
   }
+
+  async getTokenBalance( tokenAddress: string,
+    ownerAddress: string,): Promise<string> {
+      const data = encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [ownerAddress as `0x${string}`],
+      });
+      const result = await this.rpcCall<string>('eth_call', [
+        {
+          to: tokenAddress,
+          data,
+        },
+        'latest',
+      ]);
+      const balance = decodeFunctionResult({
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        data: result as `0x${string}`,
+      });
+    
+      return BigInt(result).toString();
+    }
+
 
   async getTransactionCount(address: string): Promise<string> {
     return this.rpcCall<string>('eth_getTransactionCount', [address, 'pending']);

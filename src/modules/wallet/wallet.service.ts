@@ -119,9 +119,16 @@ export class WalletService {
     }
 
     const sender = wallet.smartAccountAddress as Address;
+
+
+
+
     console.log("sender",sender)
+
+
     const value = BigInt(dto.value ?? '0');
     const data = (dto.data ?? '0x') as Hex;
+await this.validateTransferBalance(sender, dto);
 
     const [deployed, nonce, gasPrice] = await Promise.all([
       this.pimlicoService.isContractDeployed(sender),
@@ -306,6 +313,43 @@ export class WalletService {
     
     });
   }
+
+  private async validateTransferBalance(
+    sender: Address,
+    dto: PrepareUserOperationDto,
+  ): Promise<void> {
+  
+    // Native ETH transfer
+    if (!dto.tokenAddress) {
+      const amount = BigInt(dto.value ?? '0');
+  
+      const balance = await this.pimlicoService.getNativeBalance(sender);
+  
+      if (balance < amount) {
+        throw new ConflictException(
+          'Insufficient ETH balance for transfer',
+        );
+      }
+  
+      return;
+    }
+  
+    // ERC20 transfer
+    const tokenAddress = getAddress(dto.tokenAddress);
+    const transferAmount = BigInt(dto.value ?? '0');
+  
+    const balance = await this.pimlicoService.getTokenBalance(
+      tokenAddress,sender
+    );
+  
+    if (balance < transferAmount) {
+      throw new ConflictException(
+        'Insufficient token balance for transfer',
+      );
+    }
+  }
+
+  
   //   async prepareUserOperation(
   //     userId: string,
   //     dto: PrepareUserOperationDto,

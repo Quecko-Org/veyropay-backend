@@ -40,11 +40,13 @@ export class PimlicoService {
       console.log("userOperation",userOperation)
       return await this.client.sendUserOperation(userOperation, entryPoint);
     } catch (error) {
+      console.log("errrr",error)
       this.logger.warn({ err: error }, 'Pimlico UserOperation submission failed');
       throw new ProviderException(
         PIMLICO_PROVIDER_NAME,
         'Unable to submit transaction to the network',
         HttpStatus.BAD_GATEWAY,
+        error
       );
     }
   }
@@ -187,4 +189,24 @@ export class PimlicoService {
       throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to check token balance');
     }
   }
+
+  // Used for the LiFi swap-approval check - LiFi has no dedicated allowance API
+// (unlike 1inch's /approve/allowance), so this reads it directly on-chain.
+async getAllowance(
+  tokenAddress: Address,
+  ownerAddress: Address,
+  spenderAddress: Address,
+): Promise<bigint> {
+  try {
+    const allowance = await this.chainRpcClient.getAllowance(
+      tokenAddress,
+      ownerAddress,
+      spenderAddress,
+    );
+    return BigInt(allowance);
+  } catch (error) {
+    this.logger.warn({ err: error }, 'Chain RPC allowance lookup failed');
+    throw new ProviderException(PIMLICO_PROVIDER_NAME, 'Unable to check token allowance');
+  }
+}
 }

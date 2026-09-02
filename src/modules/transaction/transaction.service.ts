@@ -25,10 +25,11 @@ export class TransactionService {
     return this.updateStatus(id, TransactionStatus.CONFIRMED, txHash);
   }
 
-  async markFailed(id: string): Promise<TransactionEntity> {
-    return this.updateStatus(id, TransactionStatus.FAILED);
-  }
+ 
 
+  async markFailed(id: string, reason?: string): Promise<TransactionEntity> {
+    return this.updateStatus(id, TransactionStatus.FAILED, undefined, reason);
+  }
   async getById(id: string): Promise<TransactionEntity> {
     const transaction = await this.transactionRepository.findById(id);
     if (!transaction) {
@@ -61,11 +62,16 @@ export class TransactionService {
     id: string,
     status: TransactionStatus,
     txHash?: string,
+    failureReason? : any
+
   ): Promise<TransactionEntity> {
     const transaction = await this.getById(id);
     transaction.status = status;
     if (txHash) {
       transaction.txHash = txHash;
+    }
+    if(failureReason){
+       transaction.failureReason=failureReason
     }
 
     return this.transactionRepository.save(transaction);

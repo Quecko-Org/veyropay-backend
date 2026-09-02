@@ -68,7 +68,7 @@ export const SUPPORTED_ASSETS: IAssetInfo[] = [
   // Polygon mainnet (137) - included for cross-chain swap testing via LiFi
   {
     chainId: 137,
-    symbol: 'MATIC',
+    symbol: 'POL',
     name: 'Polygon',
     address: NATIVE_TOKEN_ADDRESS,
     decimals: 18,

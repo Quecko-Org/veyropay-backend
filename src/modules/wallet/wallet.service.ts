@@ -490,6 +490,18 @@ export class WalletService {
   //     });
   //   }
 
+
+
+  // Generic submit for a signed UserOperation that isn't itself a transfer or swap
+// (e.g. an ERC20 approve() ahead of a token-input swap - see SwapService.checkApproval).
+// Deliberately does not record a TransactionEntity or send a notification - those are
+// user-facing business events, not what a utility call like this represents. Callers
+// needing status tracking should poll PimlicoService.getReceipt with the returned hash.
+async executeUserOperation(signedUserOperation: Record<string, unknown>): Promise<string> {
+  return this.pimlicoService.submitUserOperation(signedUserOperation);
+}
+
+
   private async isWithinGasSponsorshipCap(
     userId: string,
     estimatedCostWei: bigint,

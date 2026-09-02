@@ -12,7 +12,18 @@ const ERC20_BALANCE_OF_ABI = [
     outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
-
+const ERC20_ALLOWANCE_ABI = [
+  {
+    type: 'function',
+    name: 'allowance',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
 // Plain standard Ethereum JSON-RPC client (eth_call, eth_getCode, eth_getBalance,
 // eth_getTransactionCount, eth_sendRawTransaction, eth_chainId). Pimlico's bundler/
 // paymaster endpoint (see PimlicoClient) does NOT implement these - it only supports
@@ -60,6 +71,29 @@ export class ChainRpcClient {
   
     return balance.toString();
   }
+  // Used for the LiFi swap path - LiFi has no dedicated allowance-check API (unlike
+// 1inch's /approve/allowance), so this reads the ERC20 allowance directly on-chain.
+async getAllowance(
+  tokenAddress: string,
+  ownerAddress: string,
+  spenderAddress: string,
+): Promise<string> {
+  const data = encodeFunctionData({
+    abi: ERC20_ALLOWANCE_ABI,
+    functionName: 'allowance',
+    args: [ownerAddress as `0x${string}`, spenderAddress as `0x${string}`],
+  });
+
+  const result = await this.rpcCall<string>('eth_call', [{ to: tokenAddress, data }, 'latest']);
+
+  const allowance = decodeFunctionResult({
+    abi: ERC20_ALLOWANCE_ABI,
+    functionName: 'allowance',
+    data: result as `0x${string}`,
+  });
+
+  return allowance.toString();
+}
   
   async getTransactionCount(address: string): Promise<string> {
     return this.rpcCall<string>('eth_getTransactionCount', [address, 'pending']);

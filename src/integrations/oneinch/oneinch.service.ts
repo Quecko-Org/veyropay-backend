@@ -2,6 +2,8 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ProviderException } from '@common/exceptions';
 import { OneinchClient } from './oneinch.client';
 import {
+  IOneinchAllowanceResponse,
+  IOneinchApprovalTransactionResponse,
   IOneinchQuoteRequest,
   IOneinchQuoteResponse,
   IOneinchSwapRequest,
@@ -32,6 +34,7 @@ export class OneinchService {
         ONEINCH_PROVIDER_NAME,
         'Unable to fetch swap quote',
         HttpStatus.BAD_GATEWAY,
+        error
       );
     }
   }
@@ -43,9 +46,37 @@ export class OneinchService {
       this.logger.warn({ err: error }, '1inch swap transaction request failed');
       throw new ProviderException(
         ONEINCH_PROVIDER_NAME,
-        'Unable to build swap transaction',
+        `Unable to build swap transaction ${error}`,
         HttpStatus.BAD_GATEWAY,
+        error,
+
       );
+    }
+  }
+
+  async getAllowance(
+    chainId: number,
+    tokenAddress: string,
+    walletAddress: string,
+  ): Promise<IOneinchAllowanceResponse> {
+    try {
+      return await this.client.getAllowance(chainId, tokenAddress, walletAddress);
+    } catch (error) {
+      this.logger.warn({ err: error }, '1inch allowance check failed');
+      throw new ProviderException(ONEINCH_PROVIDER_NAME, 'Unable to check token allowance');
+    }
+  }
+  
+  async getApprovalTransaction(
+    chainId: number,
+    tokenAddress: string,
+    amount?: string,
+  ): Promise<IOneinchApprovalTransactionResponse> {
+    try {
+      return await this.client.getApprovalTransaction(chainId, tokenAddress, amount);
+    } catch (error) {
+      this.logger.warn({ err: error }, '1inch approval transaction request failed');
+      throw new ProviderException(ONEINCH_PROVIDER_NAME, 'Unable to build approval transaction');
     }
   }
 }

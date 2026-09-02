@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IProviderConfig } from '@shared/interfaces';
 import { ISwapFeeConfig } from '@core/config/swap.config';
+
 import {
   IOneinchQuoteRequest,
   IOneinchQuoteResponse,
   IOneinchSwapRequest,
   IOneinchSwapResponse,
+  IOneinchAllowanceResponse,
+  IOneinchApprovalTransactionResponse,
 } from './types';
 
 @Injectable()
@@ -24,6 +27,39 @@ export class OneinchClient {
       query.set('fee', String(this.swapFeeConfig.percentage));
       query.set('referrer', this.swapFeeConfig.recipientAddress);
     }
+  }
+
+
+
+
+
+
+
+  
+  // ...inside the class:
+  async getAllowance(
+    chainId: number,
+    tokenAddress: string, 
+    walletAddress: string,
+  ): Promise<IOneinchAllowanceResponse> {
+    const query = new URLSearchParams({ tokenAddress, walletAddress });
+    return this.request<IOneinchAllowanceResponse>(
+      `/swap/v6.0/${chainId}/approve/allowance?${query}`,
+    );
+  }
+  
+  async getApprovalTransaction(
+    chainId: number,
+    tokenAddress: string,
+    amount?: string,
+  ): Promise<IOneinchApprovalTransactionResponse> {
+    const query = new URLSearchParams({ tokenAddress });
+    if (amount) {
+      query.set('amount', amount);
+    }
+    return this.request<IOneinchApprovalTransactionResponse>(
+      `/swap/v6.0/${chainId}/approve/transaction?${query}`,
+    );
   }
 
   async getQuote(request: IOneinchQuoteRequest): Promise<IOneinchQuoteResponse> {
@@ -68,7 +104,7 @@ export class OneinchClient {
       if (!response.ok) {
         const errorBody = await response.text();
 
-        throw new Error(`Lifi request failed with status ${response.status}: ${errorBody}`);      
+        throw new Error(`1inch request failed with status ${response.status}: ${errorBody}`);      
       }
 // console.log("request response",path,init,await response.json());
       return (await response.json()) as T;

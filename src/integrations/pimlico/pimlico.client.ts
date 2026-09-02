@@ -22,8 +22,21 @@ export class PimlicoClient {
     return this.rpcCall<string>('eth_sendUserOperation', [userOperation, entryPoint]);
   }
 
+  // async getUserOperationReceipt(userOpHash: string): Promise<IUserOperationReceipt | null> {
+  //   return this.rpcCall<IUserOperationReceipt | null>('eth_getUserOperationReceipt', [userOpHash]);
+  // }
   async getUserOperationReceipt(userOpHash: string): Promise<IUserOperationReceipt | null> {
-    return this.rpcCall<IUserOperationReceipt | null>('eth_getUserOperationReceipt', [userOpHash]);
+    const raw = await this.rpcCall<any | null>(
+      'eth_getUserOperationReceipt',
+      [userOpHash],
+    );
+    if (!raw) return null;
+    return {
+      userOpHash: raw.userOpHash,
+      transactionHash: raw.receipt.transactionHash,
+      success: raw.success,
+      reason: raw.reason,
+    };
   }
 
   async estimateUserOperationGas(

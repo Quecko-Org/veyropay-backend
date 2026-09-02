@@ -6,6 +6,7 @@ import { IJwtPayload } from '@shared/interfaces';
 import { SwapService } from './swap.service';
 import { PreviewSwapDto } from './dto/preview-swap.dto';
 import { ExecuteSwapDto } from './dto/execute-swap.dto';
+import { CheckSwapApprovalDto } from './dto/check-swap-approval.dto';
 
 @ApiTags('swap')
 @ApiBearerAuth()
@@ -25,4 +26,17 @@ export class SwapController {
   execute(@CurrentUser() user: IJwtPayload, @Body() dto: ExecuteSwapDto) {
     return this.swapService.execute(user.sub, dto);
   }
+  
+
+
+// ...inside the class, after preview():
+@Post('approval')
+@ApiOperation({
+  summary:
+    'Check whether the source token needs an approve() before this swap can execute ' +
+    '- call before /prepare whenever the swap source is a token, not native ETH',
+})
+checkApproval(@Body() dto: CheckSwapApprovalDto) {
+  return this.swapService.checkApproval(dto);
+}
 }

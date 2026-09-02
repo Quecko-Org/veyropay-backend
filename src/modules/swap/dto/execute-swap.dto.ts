@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsObject, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class ExecuteSwapDto {
   @ApiProperty({ example: '8453', description: 'Numeric chain ID, e.g. 8453 for Base' })
@@ -26,6 +26,16 @@ export class ExecuteSwapDto {
   @IsString()
   @IsNotEmpty()
   amount!: string;
+
+
+  @ApiPropertyOptional({
+    description:
+      'Platform fee amount quoted at preview time, in the fee token smallest unit - ' +
+      'recorded for accounting, does not itself move any funds.',
+  })
+  @IsOptional()
+  @IsString()
+  fee?: string;
 
   @ApiProperty({
     description:

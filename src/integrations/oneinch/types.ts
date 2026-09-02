@@ -6,6 +6,20 @@ export interface IOneinchQuoteRequest {
   
 }
 
+export interface IOneinchAllowanceResponse {
+  allowance: string;
+}
+
+// Ready-to-use plain transaction - `to` is the TOKEN contract (approve() is called ON
+// the token, not the router), `data` already encodes approve(spender, amount) with
+// 1inch's own router as spender.
+export interface IOneinchApprovalTransactionResponse {
+  to: string;
+  data: string;
+  value: string;
+}
+
+
 export interface IOneinchQuoteResponse {
   dstAmount: string;
   gas: number;

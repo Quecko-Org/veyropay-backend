@@ -6,6 +6,7 @@ import { IJwtPayload } from '@shared/interfaces';
 import { PaginationQueryDto } from '@shared/dto';
 import { WalletService } from './wallet.service';
 import { PrepareUserOperationDto } from './dto/prepare-user-operation.dto';
+import { ExecuteUserOperationDto } from './dto/execute-user-operation.dto';
 
 @ApiTags('wallet')
 @ApiBearerAuth()
@@ -37,4 +38,19 @@ export class WalletController {
   listTransactions(@CurrentUser() user: IJwtPayload, @Query() query: PaginationQueryDto) {
     return this.walletService.listTransactions(user.sub, query);
   }
+
+
+
+
+// ...after prepareUserOperation():
+@Post('user-operations/execute')
+@ApiOperation({
+  summary:
+    'Submit a signed UserOperation that is not itself a transfer or swap (e.g. an ' +
+    'ERC20 approve()) - use /transfer or /swap for those instead',
+})
+async executeUserOperation(@Body() dto: ExecuteUserOperationDto) {
+  const userOpHash = await this.walletService.executeUserOperation(dto.signedUserOperation);
+  return { userOpHash };
+}
 }

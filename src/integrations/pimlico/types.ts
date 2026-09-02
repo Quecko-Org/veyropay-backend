@@ -7,6 +7,7 @@ export interface IUserOperationReceipt {
   userOpHash: string;
   transactionHash: string;
   success: boolean;
+  reason?: string;
 }
 
 export interface IJsonRpcResponse<T> {

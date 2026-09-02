@@ -14,7 +14,8 @@ export function buildTypeOrmOptions(configService: ConfigService): TypeOrmModule
     database: database.name,
     ssl: database.ssl ? { rejectUnauthorized: false } : false,
     logging: database.logging,
-    // Schema changes must always go through reviewed migrations, never runtime sync.
+    // Schema changes go through reviewed migrations, applied by the deploy pipeline
+    // (`migration:run:prod`), never via runtime sync or boot-time auto-run.
     synchronize: false,
     migrationsRun: false,
     autoLoadEntities: true,

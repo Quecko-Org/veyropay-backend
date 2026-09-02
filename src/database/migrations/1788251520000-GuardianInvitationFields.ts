@@ -2,6 +2,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class GuardianInvitationFields1788251520000 implements MigrationInterface {
   name = 'GuardianInvitationFields1788251520000';
+  // ALTER TYPE ... ADD VALUE cannot be mixed with using the new value in one
+  // transaction on some Postgres versions; disable the wrapping transaction.
+  transaction = false;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

@@ -30,13 +30,25 @@ jobs:
         run: |
           docker build --no-cache -t $IMAGE_NAME:new .
       # =========================
-      # 3. Cleanup old candidate (prevent conflicts)
+      # 3. Apply pending database migrations
+      #    Runs against the same DB/network as production, before the new
+      #    container takes traffic. A failure leaves the current container up.
+      # =========================
+      - name: Run database migrations
+        run: |
+          docker run --rm \
+            --network veyropay-net \
+            --env-file .env \
+            $IMAGE_NAME:new \
+            npm run migration:run:prod
+      # =========================
+      # 4. Cleanup old candidate (prevent conflicts)
       # =========================
       - name: Cleanup old candidate container
         run: |
           docker rm -f ${CONTAINER_NAME}-candidate || true
       # =========================
-      # 4. Start candidate container (NO traffic exposure)
+      # 5. Start candidate container (NO traffic exposure)
       # =========================
       - name: Start candidate container
         run: |
@@ -46,7 +58,7 @@ jobs:
             --env-file .env \
             $IMAGE_NAME:new
       # =========================
-      # 5. Wait for healthcheck
+      # 6. Wait for healthcheck
       # =========================
       - name: Wait for healthcheck
         run: |
@@ -71,7 +83,7 @@ jobs:
           docker logs ${CONTAINER_NAME}-candidate --tail 50 || true
           exit 1
       # =========================
-      # 6. Promote candidate → production
+      # 7. Promote candidate → production
       # =========================
       - name: Switch to new version
         if: success()
@@ -90,7 +102,7 @@ jobs:
           # Remove candidate
           docker rm -f ${CONTAINER_NAME}-candidate || true
       # =========================
-      # 7. Cleanup on failure
+      # 8. Cleanup on failure
       # =========================
       - name: Cleanup failed candidate
         if: failure()
@@ -98,19 +110,19 @@ jobs:
           echo "Deployment failed - cleaning candidate container..."
           docker rm -f ${CONTAINER_NAME}-candidate || true
       # =========================
-      # 8. Verify running containers
+      # 9. Verify running containers
       # =========================
       - name: Verify running containers
         run: |
           docker ps
       # =========================
-      # 9. Show logs
+      # 10. Show logs
       # =========================
       - name: Show logs
         run: |
           docker logs $CONTAINER_NAME --tail 50 || true
       # =========================
-      # 10. Cleanup old images
+      # 11. Cleanup old images
       # =========================
       - name: Cleanup old images
         run: |

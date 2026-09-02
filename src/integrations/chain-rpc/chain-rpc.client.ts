@@ -29,7 +29,7 @@ export class ChainRpcClient {
   constructor(configService: ConfigService) {
     this.rpcUrl = (configService.get<ISafeConfig>('safe') as ISafeConfig).rpcUrl;
   }
- 
+
   async ethCall(to: string, data: string): Promise<string> {
     return this.rpcCall<string>('eth_call', [{ to, data }, 'latest']);
   }
@@ -42,25 +42,24 @@ export class ChainRpcClient {
     return this.rpcCall<string>('eth_getBalance', [address, 'latest']);
   }
 
-  
   async getTokenBalance(tokenAddress: string, ownerAddress: string): Promise<string> {
     const data = encodeFunctionData({
       abi: ERC20_BALANCE_OF_ABI,
       functionName: 'balanceOf',
       args: [ownerAddress as `0x${string}`],
     });
-  
+
     const result = await this.rpcCall<string>('eth_call', [{ to: tokenAddress, data }, 'latest']);
-  
+
     const balance = decodeFunctionResult({
       abi: ERC20_BALANCE_OF_ABI,
       functionName: 'balanceOf',
       data: result as `0x${string}`,
     });
-  
+
     return balance.toString();
   }
-  
+
   async getTransactionCount(address: string): Promise<string> {
     return this.rpcCall<string>('eth_getTransactionCount', [address, 'pending']);
   }
@@ -84,7 +83,7 @@ export class ChainRpcClient {
         body: JSON.stringify({ jsonrpc: '2.0', id: this.nextRequestId++, method, params }),
         signal: controller.signal,
       });
-      console.log("Request",response,this.rpcUrl)
+      console.log('Request', response, this.rpcUrl);
 
       if (!response.ok) {
         throw new Error(`Chain RPC request failed with status ${response.status}`);

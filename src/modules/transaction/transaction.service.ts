@@ -72,9 +72,9 @@ export class TransactionService {
   }
 
   // Attaches the bundler-assigned userOpHash right after submission, without
-// transitioning out of PENDING - actual confirmation still waits on the real
-// on-chain receipt (see TransferService.waitForReceipt).
-async recordSubmitted(id: string, userOpHash: string): Promise<TransactionEntity> {
-  return this.updateStatus(id, TransactionStatus.PENDING, userOpHash);
-}
+  // transitioning out of PENDING - actual confirmation still waits on the real
+  // on-chain receipt (see TransferService.waitForReceipt).
+  async recordSubmitted(id: string, userOpHash: string): Promise<TransactionEntity> {
+    return this.updateStatus(id, TransactionStatus.PENDING, userOpHash);
+  }
 }

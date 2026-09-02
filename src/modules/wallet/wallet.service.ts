@@ -118,7 +118,6 @@ export class WalletService {
     return this.walletRepository.save(wallet);
   }
 
-
   async prepareUserOperation(
     userId: string,
     dto: PrepareUserOperationDto,
@@ -130,11 +129,7 @@ export class WalletService {
 
     const sender = wallet.smartAccountAddress as Address;
 
-
-
-
-    console.log("sender", sender)
-
+    console.log('sender', sender);
 
     const value = BigInt(dto.value ?? '0');
     const data = (dto.data ?? '0x') as Hex;
@@ -146,7 +141,7 @@ export class WalletService {
       this.pimlicoService.getGasPrice(),
     ]);
 
-    console.log("deployed, nonce, gasPrice", deployed, nonce, gasPrice)
+    console.log('deployed, nonce, gasPrice', deployed, nonce, gasPrice);
 
     // EntryPoint v0.7 has no single `initCode` field (that's v0.6) - deployment is
     // expressed as separate `factory`/`factoryData` fields instead, present only when
@@ -164,7 +159,7 @@ export class WalletService {
     const factoryFields = factory && factoryData ? { factory, factoryData } : {};
 
     const callData = buildExecuteUserOpCallData(getAddress(dto.to), value, data);
-    console.log("deployfactoryField", factoryFields, callData)
+    console.log('deployfactoryField', factoryFields, callData);
 
     // Attempt sponsorship FIRST, before any plain (paymaster-free) gas estimate.
     // pm_sponsorUserOperation both estimates gas AND returns paymaster data in one
@@ -192,10 +187,9 @@ export class WalletService {
 
     let gasEstimate: Record<string, string>;
     let sponsorship: typeof sponsorshipAttempt = null;
-    console.log("sponsorshipAttempt gasEstimate", sponsorshipAttempt, sponsorship,)
+    console.log('sponsorshipAttempt gasEstimate', sponsorshipAttempt, sponsorship);
 
     if (sponsorshipAttempt) {
-
       // These gas numbers are valid execution-gas estimates regardless of whether the
       // backend cap check below ends up accepting or declining Pimlico's paymaster offer.
       gasEstimate = {
@@ -217,10 +211,7 @@ export class WalletService {
       if (withinBackendCap) {
         sponsorship = sponsorshipAttempt;
       }
-      console.log("if ", sponsorshipAttempt, gasEstimate, withinBackendCap)
-
-
-
+      console.log('if ', sponsorshipAttempt, gasEstimate, withinBackendCap);
     } else {
       try {
         gasEstimate = await this.pimlicoService.estimateGas(
@@ -239,13 +230,13 @@ export class WalletService {
           DEFAULT_ENTRY_POINT,
         );
       } catch (err) {
-        console.log("Asss", err)
+        console.log('Asss', err);
         // Sponsorship was declined and the sender can't cover its own prefund either
         // (EntryPoint's AA21 revert) - same outcome as the balance check below, just
         // discovered earlier, during simulation instead of a separate balance query.
         throw new ConflictException(
           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
-          'wallet does not have enough balance to cover this transaction.',
+            'wallet does not have enough balance to cover this transaction.',
         );
       }
     }
@@ -254,10 +245,16 @@ export class WalletService {
     const verificationGasLimit =
       sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit;
     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
-    console.log("else gasEstimate", gasEstimate, callGasLimit, verificationGasLimit, preVerificationGas)
+    console.log(
+      'else gasEstimate',
+      gasEstimate,
+      callGasLimit,
+      verificationGasLimit,
+      preVerificationGas,
+    );
 
     if (!sponsorship) {
-      console.log("!sponsorship", sponsorship)
+      console.log('!sponsorship', sponsorship);
 
       // Sponsorship declined (backend cap, Pimlico's policy cap, or otherwise) - the
       // Safe pays its own gas. Check upfront rather than letting the client sign a
@@ -266,24 +263,22 @@ export class WalletService {
         BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas);
       const estimatedCost = totalGas * BigInt(gasPrice.maxFeePerGas);
       const balance = await this.pimlicoService.getNativeBalance(sender);
-      console.log("!totalGas", totalGas, estimatedCost, balance)
+      console.log('!totalGas', totalGas, estimatedCost, balance);
 
       if (balance < estimatedCost) {
         throw new ConflictException(
           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
-          'wallet does not have enough balance to cover this transaction.',
+            'wallet does not have enough balance to cover this transaction.',
         );
       }
-      console.log("!balance < estimatedCost", balance < estimatedCost)
-
+      console.log('!balance < estimatedCost', balance < estimatedCost);
     } else {
       // Sponsorship granted - record it against the backend cap. Recorded at
       // prepare-time (not after actual on-chain confirmation) since this is what's
       // being committed to sponsor; a minor over-count from abandoned/unsigned
       // prepares is an acceptable tradeoff for a safety cap, not a billing ledger.
 
-      console.log("!belse sponsoredCost")
-
+      console.log('!belse sponsoredCost');
 
       const sponsoredCost =
         (BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas)) *
@@ -295,8 +290,7 @@ export class WalletService {
           chainId: wallet.chainId,
         }),
       );
-      console.log("!belse sponsoredCost", sponsoredCost)
-
+      console.log('!belse sponsoredCost', sponsoredCost);
     }
 
     return new PreparedUserOperationDto({
@@ -312,15 +306,12 @@ export class WalletService {
       maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
       ...(sponsorship
         ? {
-          paymaster: sponsorship.paymaster,
-          paymasterData: sponsorship.paymasterData,
-          paymasterVerificationGasLimit:
-            sponsorship.paymasterVerificationGasLimit,
-          paymasterPostOpGasLimit:
-            sponsorship.paymasterPostOpGasLimit,
-        }
+            paymaster: sponsorship.paymaster,
+            paymasterData: sponsorship.paymasterData,
+            paymasterVerificationGasLimit: sponsorship.paymasterVerificationGasLimit,
+            paymasterPostOpGasLimit: sponsorship.paymasterPostOpGasLimit,
+          }
         : {}),
-
     });
   }
 
@@ -331,18 +322,18 @@ export class WalletService {
     if (!dto.tokenAddress) {
       const amount = BigInt(dto.value ?? '0');
       const balance = await this.pimlicoService.getNativeBalance(sender);
-  
+
       if (balance < amount) {
         throw new ConflictException('Insufficient ETH balance for transfer');
       }
-  
+
       return;
     }
-  
+
     const tokenAddress = getAddress(dto.tokenAddress);
     const transferAmount = BigInt(dto.tokenAmount ?? '0');
     const balance = await this.pimlicoService.getTokenBalance(tokenAddress, sender);
-  
+
     if (balance < transferAmount) {
       throw new ConflictException('Insufficient token balance for transfer');
     }

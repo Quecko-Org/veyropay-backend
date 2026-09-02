@@ -24,9 +24,9 @@ export class PimlicoService {
 
   constructor(
     private readonly client: PimlicoClient,
-   private readonly chainRpcClient: ChainRpcClient,
+    private readonly chainRpcClient: ChainRpcClient,
     private readonly safeService: SafeService,
-    
+
     configService: ConfigService,
   ) {
     this.config = configService.get<IPimlicoConfig>('pimlico') as IPimlicoConfig;
@@ -37,7 +37,7 @@ export class PimlicoService {
     entryPoint: string = DEFAULT_ENTRY_POINT,
   ): Promise<string> {
     try {
-      console.log("userOperation",userOperation)
+      console.log('userOperation', userOperation);
       return await this.client.sendUserOperation(userOperation, entryPoint);
     } catch (error) {
       this.logger.warn({ err: error }, 'Pimlico UserOperation submission failed');
@@ -73,7 +73,7 @@ export class PimlicoService {
   async isContractDeployed(address: Address): Promise<boolean> {
     try {
       const code = await this.chainRpcClient.getCode(address);
-      console.log("cod ssssse",code)
+      console.log('cod ssssse', code);
       return Boolean(code) && code !== '0x';
     } catch (error) {
       this.logger.warn({ err: error }, 'Pimlico getCode lookup failed');
@@ -99,12 +99,18 @@ export class PimlicoService {
     entryPoint: string = DEFAULT_ENTRY_POINT,
   ): Promise<bigint> {
     try {
-      const result = await this.chainRpcClient.ethCall(entryPoint, buildGetNonceCallData(accountAddress));
-      console.log(" get account nonce",result,accountAddress)
-            console.log(" get account = buildGetNonceCallData(accountAddress)", buildGetNonceCallData(accountAddress))
+      const result = await this.chainRpcClient.ethCall(
+        entryPoint,
+        buildGetNonceCallData(accountAddress),
+      );
+      console.log(' get account nonce', result, accountAddress);
+      console.log(
+        ' get account = buildGetNonceCallData(accountAddress)',
+        buildGetNonceCallData(accountAddress),
+      );
 
       return decodeFunctionResult({
-        abi: ENTRY_POINT_GET_NONCE_ABI, 
+        abi: ENTRY_POINT_GET_NONCE_ABI,
         functionName: 'getNonce',
         data: result as `0x${string}`,
       });

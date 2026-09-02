@@ -71,9 +71,10 @@ export class TurnkeyService {
       return await this.client.createSubOrganization(params);
     } catch (error) {
       this.logger.warn({ err: error }, 'Turnkey sub-organization creation failed');
+      const detail = error instanceof Error ? error.message : String(error);
       throw new ProviderException(
         TURNKEY_PROVIDER_NAME,
-        `Unable to create Turnkey sub-organization ${error}`,
+        `Unable to create Turnkey sub-organization ${detail}`,
       );
     }
   }
@@ -83,14 +84,15 @@ export class TurnkeyService {
   async findSubOrganizationByOidcToken(oidcToken: string): Promise<string | null> {
     try {
       const response = await this.client.getSubOrganizationIdsByOidcToken(oidcToken);
-            console.log("response",response.organizationIds[0] )
+      console.log('response', response.organizationIds[0]);
 
       return response.organizationIds[0] ?? null;
     } catch (error) {
       this.logger.warn({ err: error }, 'Turnkey sub-organization lookup by OIDC token failed');
+      const detail = error instanceof Error ? error.message : String(error);
       throw new ProviderException(
         TURNKEY_PROVIDER_NAME,
-        `Unable to look up Turnkey sub-organization${error}`,
+        `Unable to look up Turnkey sub-organization ${detail}`,
       );
     }
   }
@@ -102,7 +104,7 @@ export class TurnkeyService {
     params: ITurnkeyOauthLoginParams,
   ): Promise<ITurnkeyOauthLoginResult> {
     try {
-      console.log("p",params)
+      console.log('p', params);
       return await this.client.oauthLogin(organizationId, params);
     } catch (error) {
       this.logger.warn({ err: error }, 'Turnkey OAuth login failed');
@@ -110,7 +112,7 @@ export class TurnkeyService {
         TURNKEY_PROVIDER_NAME,
         'Unable to complete OAuth login',
         HttpStatus.UNAUTHORIZED,
-        error
+        error,
       );
     }
   }
@@ -152,7 +154,7 @@ export class TurnkeyService {
 
     try {
       response = await this.client.getWalletAccounts(organizationId);
-      console.log("getWalletAccounts",response)
+      console.log('getWalletAccounts', response);
     } catch (error) {
       this.logger.warn({ err: error }, 'Turnkey wallet account lookup failed');
       throw new ProviderException(TURNKEY_PROVIDER_NAME, 'Unable to fetch Turnkey wallet accounts');
@@ -161,7 +163,7 @@ export class TurnkeyService {
     const ethereumAccount = response.accounts.find(
       (account) => account.addressFormat === 'ADDRESS_FORMAT_ETHEREUM',
     );
-      console.log("ethereumAccount",ethereumAccount)
+    console.log('ethereumAccount', ethereumAccount);
 
     if (!ethereumAccount) {
       throw new ProviderException(

@@ -34,18 +34,17 @@ export class SwapService {
   ) {}
 
   async previewQuote(dto: PreviewSwapDto) {
-    console.log("dto",dto)
+    console.log('dto', dto);
 
     if (dto.fromChain === dto.toChain) {
-      console.log("oneinch")
+      console.log('oneinch');
       return this.oneinchService.getSwapTransaction({
         chainId: Number(dto.fromChain),
         src: dto.fromAsset,
         dst: dto.toAsset,
         amount: dto.amount,
         from: dto.fromAddress,
-      slippage: dto.slippage ?? 1,
-
+        slippage: dto.slippage ?? 1,
       });
     }
 

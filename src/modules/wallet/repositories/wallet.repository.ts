@@ -13,4 +13,13 @@ export class WalletRepository extends BaseRepository<WalletEntity> {
   findByUserId(userId: string): Promise<WalletEntity | null> {
     return this.repository.findOne({ where: { userId } });
   }
+
+  findBySmartAccountAddress(address: string): Promise<WalletEntity | null> {
+    return this.repository
+      .createQueryBuilder('wallet')
+      .where('LOWER(wallet.smart_account_address) = LOWER(:address)', {
+        address: address.trim(),
+      })
+      .getOne();
+  }
 }

@@ -14,7 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@common/guards';
 import { CurrentUser } from '@common/decorators';
 import { IJwtPayload } from '@shared/interfaces';
-import { InviteGuardianDto, SearchGuardianDto } from './dto';
+import { InviteGuardianDto, SearchGuardianByAddressDto, SearchGuardianDto } from './dto';
 import { GuardianService } from './guardian.service';
 
 @ApiTags('guardian')
@@ -28,6 +28,17 @@ export class GuardianController {
   @ApiOperation({ summary: 'Look up a user by email to invite as a guardian' })
   search(@CurrentUser() user: IJwtPayload, @Query() query: SearchGuardianDto) {
     return this.guardianService.search(user.sub, query.email);
+  }
+
+  @Get('searchBySmartWalletAddress')
+  @ApiOperation({
+    summary: 'Look up a user by smart wallet address to invite as a guardian',
+  })
+  searchBySmartWalletAddress(
+    @CurrentUser() user: IJwtPayload,
+    @Query() query: SearchGuardianByAddressDto,
+  ) {
+    return this.guardianService.searchBySmartWalletAddress(user.sub, query.address);
   }
 
   @Get('incoming')

@@ -1,7 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { GuardianRelationship, GuardianStatus } from '@shared/enums';
+import { GuardianRelationship, GuardianStatus, WalletStatus } from '@shared/enums';
 import { UserEntity } from '@modules/profile/entities/user.entity';
+import { WalletEntity } from '@modules/wallet/entities/wallet.entity';
 import { GuardianEntity } from '../entities/guardian.entity';
+
+export class GuardianWalletCardDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiPropertyOptional()
+  smartAccountAddress?: string;
+
+  @ApiProperty()
+  chainId!: number;
+
+  @ApiProperty({ enum: WalletStatus })
+  status!: WalletStatus;
+
+  constructor(partial: GuardianWalletCardDto) {
+    Object.assign(this, partial);
+  }
+}
 
 export class GuardianUserCardDto {
   @ApiProperty()
@@ -15,6 +34,9 @@ export class GuardianUserCardDto {
 
   @ApiPropertyOptional()
   avatar?: string;
+
+  @ApiPropertyOptional({ type: GuardianWalletCardDto, nullable: true })
+  wallet?: GuardianWalletCardDto | null;
 
   constructor(partial: GuardianUserCardDto) {
     Object.assign(this, partial);
@@ -63,12 +85,22 @@ export class GuardianResponseDto {
   }
 }
 
-export function toUserCard(user: UserEntity): GuardianUserCardDto {
+export function toWalletCard(wallet: WalletEntity): GuardianWalletCardDto {
+  return new GuardianWalletCardDto({
+    id: wallet.id,
+    smartAccountAddress: wallet.smartAccountAddress,
+    chainId: wallet.chainId,
+    status: wallet.status,
+  });
+}
+
+export function toUserCard(user: UserEntity, wallet?: WalletEntity | null): GuardianUserCardDto {
   return new GuardianUserCardDto({
     id: user.id,
     email: user.email,
     displayName: user.displayName,
     avatar: user.avatar,
+    wallet: wallet ? toWalletCard(wallet) : null,
   });
 }
 
@@ -100,6 +132,7 @@ export function toGuardianResponse(entity: GuardianEntity): GuardianResponseDto 
           id: entity.guardianUserId ?? entity.id,
           email: entity.guardianEmail,
           displayName: entity.guardianName,
+          wallet: null,
         }),
     owner: ownerUser ? toUserCard(ownerUser) : undefined,
     invitedAt: entity.invitedAt,

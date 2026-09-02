@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GuardianRelationship, GuardianStatus, UserStatus } from '@shared/enums';
+import { GuardianRelationship, GuardianStatus, UserStatus, WalletStatus } from '@shared/enums';
 import { GuardianService } from './guardian.service';
 import { GuardianRepository } from './repositories/guardian.repository';
 import { GuardianEntity } from './entities/guardian.entity';
@@ -60,6 +60,7 @@ describe('GuardianService', () => {
   let walletService: {
     getByUserId: jest.Mock;
     findByUserId: jest.Mock;
+    findBySmartAccountAddress: jest.Mock;
   };
   let notificationService: { notify: jest.Mock };
   let sendgridService: { sendGuardianInvitation: jest.Mock };
@@ -83,6 +84,7 @@ describe('GuardianService', () => {
     walletService = {
       getByUserId: jest.fn().mockResolvedValue(wallet),
       findByUserId: jest.fn().mockResolvedValue(null),
+      findBySmartAccountAddress: jest.fn().mockResolvedValue(null),
     };
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
     sendgridService = { sendGuardianInvitation: jest.fn().mockResolvedValue(undefined) };
@@ -114,11 +116,89 @@ describe('GuardianService', () => {
 
     it('returns a public user card when found', async () => {
       profileService.findByEmail.mockResolvedValue(target);
+      walletService.findByUserId.mockResolvedValue(null);
+
       await expect(service.search(callerId, 'friend@example.com')).resolves.toEqual({
         id: targetId,
         email: target.email,
         displayName: target.displayName,
         avatar: target.avatar,
+        wallet: null,
+      });
+    });
+
+    it('includes the target wallet card when a wallet exists', async () => {
+      const targetWallet = {
+        id: 'wallet-2',
+        userId: targetId,
+        smartAccountAddress: '0x1234567890123456789012345678901234567890',
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
+      };
+      profileService.findByEmail.mockResolvedValue(target);
+      walletService.findByUserId.mockResolvedValue(targetWallet);
+
+      await expect(service.search(callerId, 'friend@example.com')).resolves.toEqual({
+        id: targetId,
+        email: target.email,
+        displayName: target.displayName,
+        avatar: target.avatar,
+        wallet: {
+          id: targetWallet.id,
+          smartAccountAddress: targetWallet.smartAccountAddress,
+          chainId: targetWallet.chainId,
+          status: WalletStatus.ACTIVE,
+        },
+      });
+    });
+  });
+
+  describe('searchBySmartWalletAddress', () => {
+    const smartAddress = '0x1234567890123456789012345678901234567890';
+
+    it('rejects the caller searching their own smart wallet address', async () => {
+      walletService.findBySmartAccountAddress.mockResolvedValue({
+        id: walletId,
+        userId: callerId,
+        smartAccountAddress: smartAddress,
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
+      });
+
+      await expect(
+        service.searchBySmartWalletAddress(callerId, smartAddress),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws NotFoundException when no wallet matches', async () => {
+      walletService.findBySmartAccountAddress.mockResolvedValue(null);
+
+      await expect(
+        service.searchBySmartWalletAddress(callerId, smartAddress),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns a public user card with wallet when found', async () => {
+      const targetWallet = {
+        id: 'wallet-2',
+        userId: targetId,
+        smartAccountAddress: smartAddress,
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
+      };
+      walletService.findBySmartAccountAddress.mockResolvedValue(targetWallet);
+
+      await expect(service.searchBySmartWalletAddress(callerId, smartAddress)).resolves.toEqual({
+        id: targetId,
+        email: target.email,
+        displayName: target.displayName,
+        avatar: target.avatar,
+        wallet: {
+          id: targetWallet.id,
+          smartAccountAddress: smartAddress,
+          chainId: 8453,
+          status: WalletStatus.ACTIVE,
+        },
       });
     });
   });

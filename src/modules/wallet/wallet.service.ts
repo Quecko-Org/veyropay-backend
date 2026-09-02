@@ -54,6 +54,10 @@ export class WalletService {
     return this.walletRepository.findByUserId(userId);
   }
 
+  async findBySmartAccountAddress(address: string): Promise<WalletEntity | null> {
+    return this.walletRepository.findBySmartAccountAddress(address);
+  }
+
   async getByUserId(
     userId: string,
   ): Promise<WalletEntity & { turnkeyOrganizationId: string | null }> {

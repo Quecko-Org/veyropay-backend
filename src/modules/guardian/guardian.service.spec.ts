@@ -60,6 +60,7 @@ describe('GuardianService', () => {
   let walletService: {
     getByUserId: jest.Mock;
     findByUserId: jest.Mock;
+    findBySmartAccountAddress: jest.Mock;
   };
   let notificationService: { notify: jest.Mock };
   let sendgridService: { sendGuardianInvitation: jest.Mock };
@@ -83,6 +84,7 @@ describe('GuardianService', () => {
     walletService = {
       getByUserId: jest.fn().mockResolvedValue(wallet),
       findByUserId: jest.fn().mockResolvedValue(null),
+      findBySmartAccountAddress: jest.fn().mockResolvedValue(null),
     };
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
     sendgridService = { sendGuardianInvitation: jest.fn().mockResolvedValue(undefined) };
@@ -115,6 +117,45 @@ describe('GuardianService', () => {
     it('returns a public user card when found', async () => {
       profileService.findByEmail.mockResolvedValue(target);
       await expect(service.search(callerId, 'friend@example.com')).resolves.toEqual({
+        id: targetId,
+        email: target.email,
+        displayName: target.displayName,
+        avatar: target.avatar,
+      });
+    });
+  });
+
+  describe('searchBySmartWalletAddress', () => {
+    const smartAddress = '0x1234567890123456789012345678901234567890';
+
+    it('rejects the caller searching their own smart wallet address', async () => {
+      walletService.findBySmartAccountAddress.mockResolvedValue({
+        id: walletId,
+        userId: callerId,
+        smartAccountAddress: smartAddress,
+      });
+
+      await expect(
+        service.searchBySmartWalletAddress(callerId, smartAddress),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws NotFoundException when no wallet matches', async () => {
+      walletService.findBySmartAccountAddress.mockResolvedValue(null);
+
+      await expect(
+        service.searchBySmartWalletAddress(callerId, smartAddress),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns a public user card when found', async () => {
+      walletService.findBySmartAccountAddress.mockResolvedValue({
+        id: 'wallet-2',
+        userId: targetId,
+        smartAccountAddress: smartAddress,
+      });
+
+      await expect(service.searchBySmartWalletAddress(callerId, smartAddress)).resolves.toEqual({
         id: targetId,
         email: target.email,
         displayName: target.displayName,

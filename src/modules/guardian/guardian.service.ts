@@ -52,6 +52,33 @@ export class GuardianService {
     return toUserCard(user);
   }
 
+  async searchBySmartWalletAddress(
+    callerId: string,
+    address: string,
+  ): Promise<GuardianUserCardDto> {
+    const wallet = await this.walletService.findBySmartAccountAddress(address);
+    if (!wallet) {
+      throw new NotFoundException('No user found for this smart wallet address');
+    }
+
+    if (wallet.userId === callerId) {
+      throw new BadRequestException('You cannot add yourself as a guardian');
+    }
+
+    let user: UserEntity;
+    try {
+      user = await this.profileService.getById(wallet.userId);
+    } catch {
+      throw new NotFoundException('No user found for this smart wallet address');
+    }
+
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new NotFoundException('No user found for this smart wallet address');
+    }
+
+    return toUserCard(user);
+  }
+
   async invite(callerId: string, dto: InviteGuardianDto): Promise<GuardianResponseDto> {
     const caller = await this.profileService.getById(callerId);
     const wallet = await this.walletService.getByUserId(callerId);

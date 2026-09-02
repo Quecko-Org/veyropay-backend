@@ -49,7 +49,8 @@ export class GuardianService {
       throw new NotFoundException('No user found for this email');
     }
 
-    return toUserCard(user);
+    const wallet = await this.walletService.findByUserId(user.id);
+    return toUserCard(user, wallet);
   }
 
   async searchBySmartWalletAddress(
@@ -76,7 +77,7 @@ export class GuardianService {
       throw new NotFoundException('No user found for this smart wallet address');
     }
 
-    return toUserCard(user);
+    return toUserCard(user, wallet);
   }
 
   async invite(callerId: string, dto: InviteGuardianDto): Promise<GuardianResponseDto> {

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GuardianRelationship, GuardianStatus, UserStatus } from '@shared/enums';
+import { GuardianRelationship, GuardianStatus, UserStatus, WalletStatus } from '@shared/enums';
 import { GuardianService } from './guardian.service';
 import { GuardianRepository } from './repositories/guardian.repository';
 import { GuardianEntity } from './entities/guardian.entity';
@@ -116,11 +116,39 @@ describe('GuardianService', () => {
 
     it('returns a public user card when found', async () => {
       profileService.findByEmail.mockResolvedValue(target);
+      walletService.findByUserId.mockResolvedValue(null);
+
       await expect(service.search(callerId, 'friend@example.com')).resolves.toEqual({
         id: targetId,
         email: target.email,
         displayName: target.displayName,
         avatar: target.avatar,
+        wallet: null,
+      });
+    });
+
+    it('includes the target wallet card when a wallet exists', async () => {
+      const targetWallet = {
+        id: 'wallet-2',
+        userId: targetId,
+        smartAccountAddress: '0x1234567890123456789012345678901234567890',
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
+      };
+      profileService.findByEmail.mockResolvedValue(target);
+      walletService.findByUserId.mockResolvedValue(targetWallet);
+
+      await expect(service.search(callerId, 'friend@example.com')).resolves.toEqual({
+        id: targetId,
+        email: target.email,
+        displayName: target.displayName,
+        avatar: target.avatar,
+        wallet: {
+          id: targetWallet.id,
+          smartAccountAddress: targetWallet.smartAccountAddress,
+          chainId: targetWallet.chainId,
+          status: WalletStatus.ACTIVE,
+        },
       });
     });
   });
@@ -133,6 +161,8 @@ describe('GuardianService', () => {
         id: walletId,
         userId: callerId,
         smartAccountAddress: smartAddress,
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
       });
 
       await expect(
@@ -148,18 +178,27 @@ describe('GuardianService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('returns a public user card when found', async () => {
-      walletService.findBySmartAccountAddress.mockResolvedValue({
+    it('returns a public user card with wallet when found', async () => {
+      const targetWallet = {
         id: 'wallet-2',
         userId: targetId,
         smartAccountAddress: smartAddress,
-      });
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
+      };
+      walletService.findBySmartAccountAddress.mockResolvedValue(targetWallet);
 
       await expect(service.searchBySmartWalletAddress(callerId, smartAddress)).resolves.toEqual({
         id: targetId,
         email: target.email,
         displayName: target.displayName,
         avatar: target.avatar,
+        wallet: {
+          id: targetWallet.id,
+          smartAccountAddress: smartAddress,
+          chainId: 8453,
+          status: WalletStatus.ACTIVE,
+        },
       });
     });
   });

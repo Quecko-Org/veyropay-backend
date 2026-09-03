@@ -2,7 +2,7 @@ import { registerAs } from '@nestjs/config';
 import { Hex } from 'viem';
 import { IProviderConfig } from '@shared/interfaces';
 import {
-  SAFE_4337_MODULE_ADDRESS, 
+  SAFE_4337_MODULE_ADDRESS,
   SAFE_MODULE_SETUP_ADDRESS,
 } from '@integrations/safe/contracts.constant';
 import { SOCIAL_RECOVERY_MODULE_ADDRESS } from '@integrations/safe/social-recovery-module.constant';
@@ -32,7 +32,7 @@ export default registerAs('safe', (): ISafeConfig => ({
   apiKey: process.env.SAFE_API_KEY as string,
   timeoutMs: 10000,
   retryAttempts: 3,
-  rpcUrl: (process.env.SAFE_RPC_URL as string), //|| (process.env.PIMLICO_API_BASE_URL as string),
+  rpcUrl: process.env.SAFE_RPC_URL as string, //|| (process.env.PIMLICO_API_BASE_URL as string),
   moduleSetupAddress: (process.env.SAFE_MODULE_SETUP_ADDRESS as Hex) ?? SAFE_MODULE_SETUP_ADDRESS,
   module4337Address: (process.env.SAFE_4337_MODULE_ADDRESS as Hex) ?? SAFE_4337_MODULE_ADDRESS,
   recoveryModuleAddress:

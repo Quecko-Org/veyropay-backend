@@ -13,6 +13,7 @@ jobs:
     env:
       IMAGE_NAME: veyropay-be-main
       CONTAINER_NAME: veyropay-be-main
+      DOCKER_BUILDKIT: "1"
 
     steps:
       # =========================
@@ -24,11 +25,11 @@ jobs:
           clean: false
 
       # =========================
-      # 2. Build NEW image (fresh + includes HEALTHCHECK)
+      # 2. Build NEW image (layer cache + BuildKit)
       # =========================
       - name: Build new image
         run: |
-          docker build --no-cache -t $IMAGE_NAME:new .
+          docker build -t $IMAGE_NAME:new .
       # =========================
       # 3. Apply pending database migrations
       #    Runs against the same DB/network as production, before the new

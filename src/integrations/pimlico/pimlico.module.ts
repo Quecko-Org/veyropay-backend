@@ -12,4 +12,4 @@ import { RelayerService } from './relayer.service';
   providers: [PimlicoClient, ChainRpcClient, PimlicoService, PimlicoHealthService, RelayerService],
   exports: [PimlicoService, PimlicoHealthService, RelayerService],
 })
-export class PimlicoModule {} 
+export class PimlicoModule {}

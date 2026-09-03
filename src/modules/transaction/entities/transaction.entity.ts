@@ -36,8 +36,8 @@ export class TransactionEntity extends BaseEntity {
   @Column({ name: 'provider_reference', nullable: true })
   providerReference?: string;
   // Populated when status is FAILED - the on-chain revert reason (from the
-// UserOperation receipt's `reason` field) or, for a submission-level failure, the
-// caught error's message. 
-@Column({ name: 'failure_reason', nullable: true })
-failureReason?: string;
+  // UserOperation receipt's `reason` field) or, for a submission-level failure, the
+  // caught error's message.
+  @Column({ name: 'failure_reason', nullable: true })
+  failureReason?: string;
 }

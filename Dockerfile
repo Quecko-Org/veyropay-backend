@@ -4,7 +4,7 @@
 FROM node:22-alpine AS deps
 WORKDIR /usr/src/app
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci
 
 # ---- Build ----
 FROM node:22-alpine AS build
@@ -26,7 +26,7 @@ COPY --from=build /usr/src/app/package.json ./package.json
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -qO- http://127.0.0.1:4006/health || exit 1
-  
+
 USER nestjs
 
 EXPOSE 4006

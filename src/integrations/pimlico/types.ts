@@ -29,7 +29,6 @@ export interface IPimlicoGasPriceResponse {
   fast: IGasPriceTier;
 }
 
-
 // Response of Pimlico's `pm_sponsorUserOperation` (EntryPoint v0.7 shape - separate
 // paymaster fields, not a single combined paymasterAndData blob like v0.6).
 export interface IPimlicoSponsorUserOperationResult {
@@ -55,4 +54,3 @@ export interface ISponsorUserOperationParams {
   maxPriorityFeePerGas: string;
   signature: string;
 }
-

@@ -52,7 +52,7 @@ export class SafeService {
   constructor(
     private readonly client: SafeClient,
     configService: ConfigService,
-  ) { 
+  ) {
     this.config = configService.get<ISafeConfig>('safe') as ISafeConfig;
   }
 
@@ -63,7 +63,7 @@ export class SafeService {
       provider: this.config.rpcUrl,
       predictedSafe: {
         safeAccountConfig: {
-          owners: [ownerAddress], 
+          owners: [ownerAddress],
           threshold: 1,
           to: this.config.moduleSetupAddress,
           data: buildEnableModulesSetupCallData(this.config.module4337Address),
@@ -84,7 +84,7 @@ export class SafeService {
   async predictAddress(ownerAddress: Address): Promise<Address> {
     try {
       const kit = await this.getPredictedKit(ownerAddress);
-      console.log("kit",kit,await kit.getAddress())
+      console.log('kit', kit, await kit.getAddress());
       return (await kit.getAddress()) as Address;
     } catch (error) {
       this.logger.warn({ err: error }, 'Safe address prediction failed');
@@ -98,7 +98,7 @@ export class SafeService {
     try {
       const kit = await this.getPredictedKit(ownerAddress);
       const tx = await kit.createSafeDeploymentTransaction();
-      console.log("kit tx",kit,tx)
+      console.log('kit tx', kit, tx);
       return { to: tx.to as Address, value: BigInt(tx.value), data: tx.data as Hex };
     } catch (error) {
       this.logger.warn({ err: error }, 'Safe deployment transaction encoding failed');

@@ -89,13 +89,15 @@ export class TurnkeyClient {
   async createSubOrganization(
     params: ITurnkeyCreateSubOrganizationParams,
   ): Promise<ITurnkeyCreateSubOrganizationResult> {
-    const response = await this.submitActivity<{createSubOrganizationResultV8:ITurnkeyCreateSubOrganizationResult}>(
+    const response = await this.submitActivity<{
+      createSubOrganizationResultV8: ITurnkeyCreateSubOrganizationResult;
+    }>(
       'ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V8',
       '/public/v1/submit/create_sub_organization',
       this.config.organizationId,
       params,
     );
-    console.log("ressss", response)
+    console.log('ressss', response);
     return response.activity.result.createSubOrganizationResultV8;
   }
 
@@ -109,10 +111,10 @@ export class TurnkeyClient {
       filterType: 'OIDC_TOKEN',
       filterValue: oidcToken,
     };
-    console.log("dddddd", this.config.apiKey, this.config.apiSecret, body)
+    console.log('dddddd', this.config.apiKey, this.config.apiSecret, body);
     const stamp = await this.stamp(body);
 
-    console.log("stamp created", stamp);
+    console.log('stamp created', stamp);
     return this.request<ITurnkeyGetSubOrgIdsResponse>('/public/v1/query/list_suborgs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Stamp': stamp },
@@ -128,13 +130,13 @@ export class TurnkeyClient {
     organizationId: string,
     params: ITurnkeyOauthLoginParams,
   ): Promise<ITurnkeyOauthLoginResult> {
-    const response = await this.submitActivity<{oauthLoginResult:ITurnkeyOauthLoginResult}>(
+    const response = await this.submitActivity<{ oauthLoginResult: ITurnkeyOauthLoginResult }>(
       'ACTIVITY_TYPE_OAUTH_LOGIN',
       '/public/v1/submit/oauth_login',
       organizationId,
       params,
     );
-console.log("oauth response",response)
+    console.log('oauth response', response);
     return response.activity.result.oauthLoginResult;
   }
 
@@ -149,7 +151,9 @@ console.log("oauth response",response)
   async initEmailRecovery(
     params: ITurnkeyInitEmailRecoveryParams,
   ): Promise<ITurnkeyInitEmailRecoveryResult> {
-    const response = await this.submitActivity<{initUserEmailRecoveryResult:ITurnkeyInitEmailRecoveryResult}>(
+    const response = await this.submitActivity<{
+      initUserEmailRecoveryResult: ITurnkeyInitEmailRecoveryResult;
+    }>(
       'ACTIVITY_TYPE_INIT_USER_EMAIL_RECOVERY_V2',
       '/public/v1/submit/init_user_email_recovery',
       params.organizationId,
@@ -185,14 +189,13 @@ console.log("oauth response",response)
       },
     };
 
-    const response = await this.request<IActivityResponse<{recoverUserResult:ITurnkeyCompleteRecoveryResult}>>(
-      '/public/v1/submit/recover_user',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Stamp': params.stamp },
-        body: JSON.stringify(body),
-      },
-    );
+    const response = await this.request<
+      IActivityResponse<{ recoverUserResult: ITurnkeyCompleteRecoveryResult }>
+    >('/public/v1/submit/recover_user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Stamp': params.stamp },
+      body: JSON.stringify(body),
+    });
 
     return response.activity.result.recoverUserResult;
   }
@@ -227,7 +230,6 @@ console.log("oauth response",response)
         ...init,
         signal: controller.signal,
       });
-
 
       if (!response.ok) {
         const errorBody = await response.text();

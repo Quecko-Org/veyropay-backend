@@ -40,7 +40,7 @@ export class ChainRpcClient {
   constructor(configService: ConfigService) {
     this.rpcUrl = (configService.get<ISafeConfig>('safe') as ISafeConfig).rpcUrl;
   }
- 
+
   async ethCall(to: string, data: string): Promise<string> {
     return this.rpcCall<string>('eth_call', [{ to, data }, 'latest']);
   }
@@ -53,48 +53,47 @@ export class ChainRpcClient {
     return this.rpcCall<string>('eth_getBalance', [address, 'latest']);
   }
 
-  
   async getTokenBalance(tokenAddress: string, ownerAddress: string): Promise<string> {
     const data = encodeFunctionData({
       abi: ERC20_BALANCE_OF_ABI,
       functionName: 'balanceOf',
       args: [ownerAddress as `0x${string}`],
     });
-  
+
     const result = await this.rpcCall<string>('eth_call', [{ to: tokenAddress, data }, 'latest']);
-  
+
     const balance = decodeFunctionResult({
       abi: ERC20_BALANCE_OF_ABI,
       functionName: 'balanceOf',
       data: result as `0x${string}`,
     });
-  
+
     return balance.toString();
   }
   // Used for the LiFi swap path - LiFi has no dedicated allowance-check API (unlike
-// 1inch's /approve/allowance), so this reads the ERC20 allowance directly on-chain.
-async getAllowance(
-  tokenAddress: string,
-  ownerAddress: string,
-  spenderAddress: string,
-): Promise<string> {
-  const data = encodeFunctionData({
-    abi: ERC20_ALLOWANCE_ABI,
-    functionName: 'allowance',
-    args: [ownerAddress as `0x${string}`, spenderAddress as `0x${string}`],
-  });
+  // 1inch's /approve/allowance), so this reads the ERC20 allowance directly on-chain.
+  async getAllowance(
+    tokenAddress: string,
+    ownerAddress: string,
+    spenderAddress: string,
+  ): Promise<string> {
+    const data = encodeFunctionData({
+      abi: ERC20_ALLOWANCE_ABI,
+      functionName: 'allowance',
+      args: [ownerAddress as `0x${string}`, spenderAddress as `0x${string}`],
+    });
 
-  const result = await this.rpcCall<string>('eth_call', [{ to: tokenAddress, data }, 'latest']);
+    const result = await this.rpcCall<string>('eth_call', [{ to: tokenAddress, data }, 'latest']);
 
-  const allowance = decodeFunctionResult({
-    abi: ERC20_ALLOWANCE_ABI,
-    functionName: 'allowance',
-    data: result as `0x${string}`,
-  });
+    const allowance = decodeFunctionResult({
+      abi: ERC20_ALLOWANCE_ABI,
+      functionName: 'allowance',
+      data: result as `0x${string}`,
+    });
 
-  return allowance.toString();
-}
-  
+    return allowance.toString();
+  }
+
   async getTransactionCount(address: string): Promise<string> {
     return this.rpcCall<string>('eth_getTransactionCount', [address, 'pending']);
   }
@@ -118,7 +117,7 @@ async getAllowance(
         body: JSON.stringify({ jsonrpc: '2.0', id: this.nextRequestId++, method, params }),
         signal: controller.signal,
       });
-      console.log("Request",response,this.rpcUrl)
+      console.log('Request', response, this.rpcUrl);
 
       if (!response.ok) {
         throw new Error(`Chain RPC request failed with status ${response.status}`);

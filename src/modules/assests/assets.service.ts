@@ -8,6 +8,6 @@ export class AssetsService {
       return SUPPORTED_ASSETS;
     }
 
-    return SUPPORTED_ASSETS.filter((asset:any) => asset.chainId === chainId);
+    return SUPPORTED_ASSETS.filter((asset) => asset.chainId === chainId);
   }
 }

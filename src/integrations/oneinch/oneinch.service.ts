@@ -19,7 +19,8 @@ export class OneinchService {
   private readonly logger = new Logger(OneinchService.name);
   private readonly config: ISwapFeeConfig;
 
-  constructor(private readonly client: OneinchClient,
+  constructor(
+    private readonly client: OneinchClient,
     configService: ConfigService,
   ) {
     this.config = configService.get<ISwapFeeConfig>('swapFee') as ISwapFeeConfig;
@@ -28,13 +29,13 @@ export class OneinchService {
   async getQuote(request: IOneinchQuoteRequest): Promise<IOneinchQuoteResponse> {
     try {
       return await this.client.getQuote(request);
-    } catch (error) { 
+    } catch (error) {
       this.logger.warn({ err: error }, '1inch quote request failed');
       throw new ProviderException(
         ONEINCH_PROVIDER_NAME,
         'Unable to fetch swap quote',
         HttpStatus.BAD_GATEWAY,
-        error
+        error,
       );
     }
   }
@@ -46,10 +47,9 @@ export class OneinchService {
       this.logger.warn({ err: error }, '1inch swap transaction request failed');
       throw new ProviderException(
         ONEINCH_PROVIDER_NAME,
-        `Unable to build swap transaction ${error}`,
+        `Unable to build swap transaction ${error instanceof Error ? error.message : String(error)}`,
         HttpStatus.BAD_GATEWAY,
         error,
-
       );
     }
   }
@@ -66,7 +66,7 @@ export class OneinchService {
       throw new ProviderException(ONEINCH_PROVIDER_NAME, 'Unable to check token allowance');
     }
   }
-  
+
   async getApprovalTransaction(
     chainId: number,
     tokenAddress: string,

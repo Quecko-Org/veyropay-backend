@@ -25,6 +25,7 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix(appConfig.apiPrefix, {
     exclude: [
+      { path: '', method: RequestMethod.GET },
       { path: 'health', method: RequestMethod.ALL },
       { path: 'metrics', method: RequestMethod.ALL },
     ],

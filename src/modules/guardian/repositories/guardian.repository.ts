@@ -86,4 +86,16 @@ export class GuardianRepository extends BaseRepository<GuardianEntity> {
       relations: { guardianUser: true, wallet: { user: true } },
     });
   }
+
+  findActiveApproversForWallet(walletId: string): Promise<GuardianEntity[]> {
+    return this.repository.find({
+      where: {
+        walletId,
+        status: GuardianStatus.ACTIVE,
+        canApproveRecovery: true,
+      },
+      relations: { guardianUser: true },
+      order: { createdAt: 'ASC' },
+    });
+  }
 }

@@ -13,7 +13,6 @@ jobs:
     env:
       IMAGE_NAME: veyropay-be-main
       CONTAINER_NAME: veyropay-be-main
-      DOCKER_BUILDKIT: "1"
 
     steps:
       # =========================
@@ -25,7 +24,7 @@ jobs:
           clean: false
 
       # =========================
-      # 2. Build NEW image (layer cache + BuildKit)
+      # 2. Build NEW image (reuse layer cache; no BuildKit/buildx required)
       # =========================
       - name: Build new image
         run: |

@@ -31,6 +31,7 @@ export class TransferService {
       chain: dto.chain,
       asset: dto.asset,
       amount: dto.amount,
+      toAddress: dto.toAddress,
       provider: 'pimlico',
     });
 

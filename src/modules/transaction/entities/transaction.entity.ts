@@ -40,4 +40,10 @@ export class TransactionEntity extends BaseEntity {
 // caught error's message. 
 @Column({ name: 'failure_reason', nullable: true })
 failureReason?: string;
+
+
+// Recipient address - only meaningful for a TRANSFER (a SWAP's output lands back on
+// the same Safe that initiated it, so there's no distinct recipient to record).
+@Column({ name: 'to_address', nullable: true })
+toAddress?: string;
 }

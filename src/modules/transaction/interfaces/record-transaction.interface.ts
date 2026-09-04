@@ -10,4 +10,5 @@ export interface IRecordTransaction {
   fee?: string;
   txHash?: string;
   providerReference?: string;
+  toAddress?: string;
 }

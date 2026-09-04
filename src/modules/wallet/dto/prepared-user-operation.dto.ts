@@ -1,4 +1,4 @@
-import { ApiProperty,ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PreparedUserOperationDto {
   @ApiProperty()
@@ -7,7 +7,7 @@ export class PreparedUserOperationDto {
   @ApiProperty()
   nonce!: string;
 
-   // EntryPoint v0.7 shape - separate factory/factoryData fields, not a single combined
+  // EntryPoint v0.7 shape - separate factory/factoryData fields, not a single combined
   // initCode blob (that's the v0.6 shape). Both undefined/absent when the smart account
   // is already deployed on-chain.
   @ApiPropertyOptional({ description: 'Deployment factory address - absent if already deployed' })
@@ -35,16 +35,16 @@ export class PreparedUserOperationDto {
   maxPriorityFeePerGas!: string;
 
   @ApiProperty({ description: '0x if unsponsored' })
-  paymaster?: string  | undefined;
+  paymaster?: string | undefined;
 
   @ApiProperty({ description: '0x if unsponsored' })
-  paymasterData?: string  | undefined;
+  paymasterData?: string | undefined;
 
   @ApiProperty()
   paymasterVerificationGasLimit?: string | undefined;
 
   @ApiProperty()
-  paymasterPostOpGasLimit?: string  | undefined;
+  paymasterPostOpGasLimit?: string | undefined;
 
   @ApiProperty()
   entryPoint?: string;

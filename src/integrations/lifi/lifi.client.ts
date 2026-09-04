@@ -33,24 +33,24 @@ export class LifiClient {
   }
 
   // ...inside the class, after getQuote:
-// Tracks the actual cross-chain bridge transfer, separate from the source-chain
-// transaction itself - see docs.li.fi/li.fi-api/li.fi-api/status-of-a-transaction.
-// Passing fromChain/toChain is optional but speeds up the lookup.
-async getStatus(
-  txHash: string,
-  fromChain?: string,
-  toChain?: string,
-): Promise<ILifiStatusResponse> {
-  const query = new URLSearchParams({ txHash });
-  if (fromChain) {
-    query.set('fromChain', fromChain);
-  }
-  if (toChain) {
-    query.set('toChain', toChain);
-  }
+  // Tracks the actual cross-chain bridge transfer, separate from the source-chain
+  // transaction itself - see docs.li.fi/li.fi-api/li.fi-api/status-of-a-transaction.
+  // Passing fromChain/toChain is optional but speeds up the lookup.
+  async getStatus(
+    txHash: string,
+    fromChain?: string,
+    toChain?: string,
+  ): Promise<ILifiStatusResponse> {
+    const query = new URLSearchParams({ txHash });
+    if (fromChain) {
+      query.set('fromChain', fromChain);
+    }
+    if (toChain) {
+      query.set('toChain', toChain);
+    }
 
-  return this.request<ILifiStatusResponse>(`/status?${query}`);
-}
+    return this.request<ILifiStatusResponse>(`/status?${query}`);
+  }
   protected async request<T>(path: string, init?: RequestInit): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
@@ -68,7 +68,8 @@ async getStatus(
 
       if (!response.ok) {
         const errorBody = await response.text();
-        throw new Error(`Lifi request failed with status ${response.status}: ${errorBody}`);      }
+        throw new Error(`Lifi request failed with status ${response.status}: ${errorBody}`);
+      }
 
       return (await response.json()) as T;
     } finally {

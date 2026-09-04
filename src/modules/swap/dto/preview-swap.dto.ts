@@ -1,4 +1,3 @@
-
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 export class PreviewSwapDto {
@@ -6,7 +5,7 @@ export class PreviewSwapDto {
   @IsString()
   @IsNotEmpty()
   fromChain!: string;
-  
+
   @ApiProperty({ example: '8453', description: 'Numeric chain ID, e.g. 8453 for Base' })
   @IsString()
   @IsNotEmpty()
@@ -42,5 +41,4 @@ export class PreviewSwapDto {
   @Min(0)
   @Max(50)
   slippage?: number;
-
 }

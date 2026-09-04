@@ -1,4 +1,4 @@
-import { Injectable, Logger ,BadRequestException} from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { NotificationType, TransactionType } from '@shared/enums';
 import { WalletService } from '@modules/wallet/wallet.service';
 import { TransactionService } from '@modules/transaction/transaction.service';
@@ -11,7 +11,6 @@ import { IUserOperationReceipt } from '@integrations/pimlico/types';
 import { ILifiStatusResponse } from '@integrations/lifi/types';
 import { PreviewSwapDto } from './dto/preview-swap.dto';
 import { ExecuteSwapDto } from './dto/execute-swap.dto';
-
 
 import { Address, encodeFunctionData } from 'viem';
 // ...existing imports...
@@ -60,22 +59,22 @@ export class SwapService {
   ) {}
 
   async previewQuote(dto: PreviewSwapDto) {
-    console.log("dto",dto)
+    console.log('dto', dto);
 
     if (dto.fromChain === dto.toChain) {
-      console.log("oneinch")
+      console.log('oneinch');
       return this.oneinchService.getSwapTransaction({
         chainId: Number(dto.fromChain),
         src: dto.fromAsset,
         dst: dto.toAsset,
         amount: dto.amount,
         from: dto.fromAddress,
-      slippage: dto.slippage ?? 1,
+        slippage: dto.slippage ?? 1,
       });
     }
 
     return this.lifiService.getQuote({
-      fromChain:  dto.fromChain,
+      fromChain: dto.fromChain,
       toChain: dto.toChain,
       fromToken: dto.fromAsset,
       toToken: dto.toAsset,
@@ -85,62 +84,62 @@ export class SwapService {
   }
 
   // A token-input swap needs the router to be able to pull the source token via
-// transferFrom() - that requires a prior ERC20 approve() from the Safe, which is
-// outside the swap UserOperation itself. Call this before /prepare for a token
-// source; skip it entirely for a native-ETH source (no approval concept applies).
-async checkApproval(dto: CheckSwapApprovalDto): Promise<ICheckApprovalResult> {
-  const isCrossChain = dto.fromChain !== dto.toChain;
+  // transferFrom() - that requires a prior ERC20 approve() from the Safe, which is
+  // outside the swap UserOperation itself. Call this before /prepare for a token
+  // source; skip it entirely for a native-ETH source (no approval concept applies).
+  async checkApproval(dto: CheckSwapApprovalDto): Promise<ICheckApprovalResult> {
+    const isCrossChain = dto.fromChain !== dto.toChain;
 
-  if (!isCrossChain) {
-    const { allowance } = await this.oneinchService.getAllowance(
-      Number(dto.fromChain),
-      dto.tokenAddress,
-      dto.ownerAddress,
+    if (!isCrossChain) {
+      const { allowance } = await this.oneinchService.getAllowance(
+        Number(dto.fromChain),
+        dto.tokenAddress,
+        dto.ownerAddress,
+      );
+      console.log('allowance', allowance);
+
+      if (BigInt(allowance) >= BigInt(dto.amount)) {
+        return { needsApproval: false };
+      }
+
+      const approvalTx = await this.oneinchService.getApprovalTransaction(
+        Number(dto.fromChain),
+        dto.tokenAddress,
+        dto.amount,
+      );
+      console.log('approvalTx', approvalTx);
+
+      return { needsApproval: true, transaction: approvalTx };
+    }
+
+    if (!dto.spenderAddress) {
+      throw new BadRequestException(
+        'spenderAddress is required for a cross-chain approval check - use the ' +
+          "preview response's estimate.approvalAddress",
+      );
+    }
+
+    const currentAllowance = await this.pimlicoService.getAllowance(
+      dto.tokenAddress as Address,
+      dto.ownerAddress as Address,
+      dto.spenderAddress as Address,
     );
-    console.log("allowance",allowance)
 
-    if (BigInt(allowance) >= BigInt(dto.amount)) {
+    if (currentAllowance >= BigInt(dto.amount)) {
       return { needsApproval: false };
     }
 
-    const approvalTx = await this.oneinchService.getApprovalTransaction(
-      Number(dto.fromChain),
-      dto.tokenAddress,
-      dto.amount,
-    );
-    console.log("approvalTx",approvalTx)
+    const data = encodeFunctionData({
+      abi: ERC20_APPROVE_ABI,
+      functionName: 'approve',
+      args: [dto.spenderAddress as Address, BigInt(dto.amount)],
+    });
 
-    return { needsApproval: true, transaction: approvalTx };
+    return {
+      needsApproval: true,
+      transaction: { to: dto.tokenAddress, data, value: '0' },
+    };
   }
-
-  if (!dto.spenderAddress) {
-    throw new BadRequestException(
-      'spenderAddress is required for a cross-chain approval check - use the ' +
-        "preview response's estimate.approvalAddress",
-    );
-  }
-
-  const currentAllowance = await this.pimlicoService.getAllowance(
-    dto.tokenAddress as Address,
-    dto.ownerAddress as Address,
-    dto.spenderAddress as Address,
-  );
-
-  if (currentAllowance >= BigInt(dto.amount)) {
-    return { needsApproval: false };
-  }
-
-  const data = encodeFunctionData({
-    abi: ERC20_APPROVE_ABI,
-    functionName: 'approve',
-    args: [dto.spenderAddress as Address, BigInt(dto.amount)],
-  });
-
-  return {
-    needsApproval: true,
-    transaction: { to: dto.tokenAddress, data, value: '0' },
-  };
-}
 
   async execute(userId: string, dto: ExecuteSwapDto): Promise<TransactionEntity> {
     const wallet = await this.walletService.getByUserId(userId);
@@ -158,7 +157,7 @@ async checkApproval(dto: CheckSwapApprovalDto): Promise<ICheckApprovalResult> {
 
     try {
       const userOpHash = await this.pimlicoService.submitUserOperation(dto.signedUserOperation);
-      console.log("uerOphas",userOpHash)
+      console.log('uerOphas', userOpHash);
       const submitted = await this.transactionService.recordSubmitted(transaction.id, userOpHash);
 
       void this.finalizeOnceReceiptKnown(transaction.id, userId, userOpHash, dto);
@@ -186,7 +185,7 @@ async checkApproval(dto: CheckSwapApprovalDto): Promise<ICheckApprovalResult> {
   ): Promise<void> {
     try {
       const receipt = await this.waitForReceipt(userOpHash);
-console.log("waitttt",receipt)
+      console.log('waitttt', receipt);
       if (!receipt?.success) {
         await this.transactionService.markFailed(transactionId);
         await this.notificationService.notify(

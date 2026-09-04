@@ -25,8 +25,6 @@ export class TransactionService {
     return this.updateStatus(id, TransactionStatus.CONFIRMED, txHash);
   }
 
- 
-
   async markFailed(id: string, reason?: string): Promise<TransactionEntity> {
     return this.updateStatus(id, TransactionStatus.FAILED, undefined, reason);
   }
@@ -62,25 +60,24 @@ export class TransactionService {
     id: string,
     status: TransactionStatus,
     txHash?: string,
-    failureReason? : any
-
+    failureReason?: string,
   ): Promise<TransactionEntity> {
     const transaction = await this.getById(id);
     transaction.status = status;
     if (txHash) {
       transaction.txHash = txHash;
     }
-    if(failureReason){
-       transaction.failureReason=failureReason
+    if (failureReason) {
+      transaction.failureReason = failureReason;
     }
 
     return this.transactionRepository.save(transaction);
   }
 
   // Attaches the bundler-assigned userOpHash right after submission, without
-// transitioning out of PENDING - actual confirmation still waits on the real
-// on-chain receipt (see TransferService.waitForReceipt).
-async recordSubmitted(id: string, userOpHash: string): Promise<TransactionEntity> {
-  return this.updateStatus(id, TransactionStatus.PENDING, userOpHash);
-}
+  // transitioning out of PENDING - actual confirmation still waits on the real
+  // on-chain receipt (see TransferService.waitForReceipt).
+  async recordSubmitted(id: string, userOpHash: string): Promise<TransactionEntity> {
+    return this.updateStatus(id, TransactionStatus.PENDING, userOpHash);
+  }
 }

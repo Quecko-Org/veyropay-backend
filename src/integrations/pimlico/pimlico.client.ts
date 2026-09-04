@@ -26,10 +26,12 @@ export class PimlicoClient {
   //   return this.rpcCall<IUserOperationReceipt | null>('eth_getUserOperationReceipt', [userOpHash]);
   // }
   async getUserOperationReceipt(userOpHash: string): Promise<IUserOperationReceipt | null> {
-    const raw = await this.rpcCall<any | null>(
-      'eth_getUserOperationReceipt',
-      [userOpHash],
-    );
+    const raw = await this.rpcCall<{
+      userOpHash: string;
+      receipt: { transactionHash: string };
+      success: boolean;
+      reason?: string;
+    } | null>('eth_getUserOperationReceipt', [userOpHash]);
     if (!raw) return null;
     return {
       userOpHash: raw.userOpHash,
@@ -46,12 +48,10 @@ export class PimlicoClient {
     return this.rpcCall('eth_estimateUserOperationGas', [userOperation, entryPoint]);
   }
 
-
-
   async getGasPrice(): Promise<IPimlicoGasPriceResponse> {
     return this.rpcCall<IPimlicoGasPriceResponse>('pimlico_getUserOperationGasPrice', []);
   }
- 
+
   async sponsorUserOperation(
     userOperation: IUserOperation,
     entryPoint: string,
@@ -64,10 +64,8 @@ export class PimlicoClient {
     ]);
   }
 
- 
-
   private async rpcCall<T>(method: string, params: unknown[]): Promise<T> {
-    console.log("rpcCall gas",method,params)
+    console.log('rpcCall gas', method, params);
     const response = await this.request<IJsonRpcResponse<T>>('', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -75,14 +73,16 @@ export class PimlicoClient {
     });
 
     if (response.error) {
-      throw new Error(`Pimlico RPC error ${method} (${response.error.code}): ${response.error.message}`);
+      throw new Error(
+        `Pimlico RPC error ${method} (${response.error.code}): ${response.error.message}`,
+      );
     }
 
     return response.result as T;
   }
 
   protected async request<T>(path: string, init?: RequestInit): Promise<T> {
-    console.log("request",path,init,`${this.config.baseUrl}${path}`)
+    console.log('request', path, init, `${this.config.baseUrl}${path}`);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
 

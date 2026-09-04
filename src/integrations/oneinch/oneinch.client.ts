@@ -29,17 +29,10 @@ export class OneinchClient {
     }
   }
 
-
-
-
-
-
-
-  
   // ...inside the class:
   async getAllowance(
     chainId: number,
-    tokenAddress: string, 
+    tokenAddress: string,
     walletAddress: string,
   ): Promise<IOneinchAllowanceResponse> {
     const query = new URLSearchParams({ tokenAddress, walletAddress });
@@ -47,7 +40,7 @@ export class OneinchClient {
       `/swap/v6.0/${chainId}/approve/allowance?${query}`,
     );
   }
-  
+
   async getApprovalTransaction(
     chainId: number,
     tokenAddress: string,
@@ -104,12 +97,12 @@ export class OneinchClient {
       if (!response.ok) {
         const errorBody = await response.text();
 
-        throw new Error(`1inch request failed with status ${response.status}: ${errorBody}`);      
+        throw new Error(`1inch request failed with status ${response.status}: ${errorBody}`);
       }
-// console.log("request response",path,init,await response.json());
+      // console.log("request response",path,init,await response.json());
       return (await response.json()) as T;
     } finally {
       clearTimeout(timeout);
-    } 
+    }
   }
 }

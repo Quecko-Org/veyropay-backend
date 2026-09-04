@@ -14,43 +14,40 @@ import { ExecuteUserOperationDto } from './dto/execute-user-operation.dto';
 @Controller({ path: 'wallet', version: '1' })
 export class WalletController {
   constructor(private readonly walletService: WalletService) {}
- 
+
   @Get()
   @ApiOperation({ summary: 'Get the authenticated user wallet' })
   getWallet(@CurrentUser() user: IJwtPayload) {
     return this.walletService.getByUserId(user.sub);
   }
- 
+
   @Post('provision')
   @ApiOperation({ summary: 'Provision the on-chain smart account for the wallet' })
   provision(@CurrentUser() user: IJwtPayload) {
     return this.walletService.requestSmartAccountProvisioning(user.sub);
   }
- 
+
   @Post('user-operations/prepare')
   @ApiOperation({ summary: 'Prepare an unsigned UserOperation for the client to sign' })
   prepareUserOperation(@CurrentUser() user: IJwtPayload, @Body() dto: PrepareUserOperationDto) {
     return this.walletService.prepareUserOperation(user.sub, dto);
   }
- 
+
   @Get('transactions')
   @ApiOperation({ summary: 'List transactions for the authenticated user wallet' })
   listTransactions(@CurrentUser() user: IJwtPayload, @Query() query: PaginationQueryDto) {
     return this.walletService.listTransactions(user.sub, query);
   }
 
-
-
-
-// ...after prepareUserOperation():
-@Post('user-operations/execute')
-@ApiOperation({
-  summary:
-    'Submit a signed UserOperation that is not itself a transfer or swap (e.g. an ' +
-    'ERC20 approve()) - use /transfer or /swap for those instead',
-})
-async executeUserOperation(@Body() dto: ExecuteUserOperationDto) {
-  const userOpHash = await this.walletService.executeUserOperation(dto.signedUserOperation);
-  return { userOpHash };
-}
+  // ...after prepareUserOperation():
+  @Post('user-operations/execute')
+  @ApiOperation({
+    summary:
+      'Submit a signed UserOperation that is not itself a transfer or swap (e.g. an ' +
+      'ERC20 approve()) - use /transfer or /swap for those instead',
+  })
+  async executeUserOperation(@Body() dto: ExecuteUserOperationDto) {
+    const userOpHash = await this.walletService.executeUserOperation(dto.signedUserOperation);
+    return { userOpHash };
+  }
 }

@@ -60,7 +60,6 @@ export const envValidationSchema = Joi.object({
   GAS_SPONSORSHIP_USER_DAILY_CAP_WEI: Joi.string().allow('').optional(),
   GAS_SPONSORSHIP_USER_MONTHLY_CAP_WEI: Joi.string().allow('').optional(),
 
-
   // 1inch
   ONEINCH_API_BASE_URL: Joi.string().uri().required(),
   ONEINCH_API_KEY: Joi.string().required(),
@@ -69,7 +68,6 @@ export const envValidationSchema = Joi.object({
   LIFI_API_BASE_URL: Joi.string().uri().required(),
   LIFI_API_KEY: Joi.string().required(),
   LIFI_INTEGRATOR_ID: Joi.string().allow('').optional(),
-
 
   //swap
   SWAP_FEE_PERCENTAGE: Joi.number().min(0).max(3).default(0),

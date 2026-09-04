@@ -24,11 +24,13 @@ jobs:
           clean: false
 
       # =========================
-      # 2. Build NEW image (fresh + includes HEALTHCHECK)
+      # 2. Build NEW image (reuse layer cache; no BuildKit/buildx required)
       # =========================
       - name: Build new image
+        env:
+          DOCKER_BUILDKIT: "0"
         run: |
-          docker build --no-cache -t $IMAGE_NAME:new .
+          docker build -t $IMAGE_NAME:new .
       # =========================
       # 3. Apply pending database migrations
       #    Runs against the same DB/network as production, before the new

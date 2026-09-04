@@ -71,9 +71,10 @@ async function ensureMigrationsTable(): Promise<void> {
 }
 
 async function isRecorded(name: string): Promise<boolean> {
-  const rows: unknown[] = await dataSource.query(`SELECT 1 FROM "migrations" WHERE "name" = $1 LIMIT 1`, [
-    name,
-  ]);
+  const rows: unknown[] = await dataSource.query(
+    `SELECT 1 FROM "migrations" WHERE "name" = $1 LIMIT 1`,
+    [name],
+  );
   return rows.length > 0;
 }
 
@@ -103,11 +104,10 @@ async function main(): Promise<void> {
         migration.name,
       ]);
       baselined += 1;
-      // eslint-disable-next-line no-console
+
       console.log(`Baselined already-applied migration: ${migration.name}`);
     }
 
-    // eslint-disable-next-line no-console
     console.log(
       baselined === 0
         ? 'Migration baseline: nothing to record'
@@ -119,7 +119,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  // eslint-disable-next-line no-console
   console.error('Migration baseline failed', error);
   process.exit(1);
 });

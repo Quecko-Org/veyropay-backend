@@ -22,4 +22,16 @@ export class DeviceSessionRepository extends BaseRepository<DeviceSessionEntity>
   async revoke(id: string): Promise<void> {
     await this.repository.update({ id }, { status: DeviceSessionStatus.REVOKED });
   }
+
+  async findActiveFcmTokensForUser(userId: string): Promise<string[]> {
+    const rows = await this.repository
+      .createQueryBuilder('session')
+      .select('session.fcm_token', 'fcmToken')
+      .where('session.user_id = :userId', { userId })
+      .andWhere('session.status = :status', { status: DeviceSessionStatus.ACTIVE })
+      .andWhere('session.fcm_token IS NOT NULL')
+      .getRawMany<{ fcmToken: string }>();
+
+    return [...new Set(rows.map((row) => row.fcmToken).filter(Boolean))];
+  }
 }

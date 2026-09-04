@@ -57,12 +57,12 @@ export const SUPPORTED_ASSETS: IAssetInfo[] = [
   },
   {
     chainId: 8453,
-    symbol: 'DAI',
-    name: 'Dai Stablecoin',
-    address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
+    symbol: 'USDS',
+    name: 'USDS Stablecoin',
+    address: '0x820C137FA70C8691F0E44DC420A5E53C168921DC',
     decimals: 18,
     isNative: false,
-    logoUrl: `${TRUST_WALLET_ASSETS_BASE_URL}/base/assets/0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb/logo.png`,
+    logoUrl: `${TRUST_WALLET_ASSETS_BASE_URL}/base/assets/0x820C137FA70C8691F0E44DC420A5E53C168921DC/logo.png`,
   },
 
   // Polygon mainnet (137) - included for cross-chain swap testing via LiFi

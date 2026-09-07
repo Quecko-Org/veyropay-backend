@@ -1,5 +1,4 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { ProviderException } from '@common/exceptions';
+import { Injectable, Logger } from '@nestjs/common';
 import { OneinchClient } from './oneinch.client';
 import {
   IOneinchAllowanceResponse,
@@ -9,34 +8,25 @@ import {
   IOneinchSwapRequest,
   IOneinchSwapResponse,
 } from './types';
-import { ONEINCH_PROVIDER_NAME } from './constants';
-import { ConfigService } from '@nestjs/config';
-import { ISwapFeeConfig } from '@app/core/config/swap.config';
 
 // Business modules depend on this service, never on OneinchClient directly.
+//
+// Every method just logs context then rethrows the caught error as-is - OneinchClient
+// already throws ProviderHttpError (the real 1inch HTTP status + body) for anything
+// that fails, and GlobalExceptionFilter turns that into a proper API response (real
+// status/code, not a blind 502) without this layer needing to re-wrap anything.
 @Injectable()
 export class OneinchService {
   private readonly logger = new Logger(OneinchService.name);
-  private readonly config: ISwapFeeConfig;
 
-  constructor(
-    private readonly client: OneinchClient,
-    configService: ConfigService,
-  ) {
-    this.config = configService.get<ISwapFeeConfig>('swapFee') as ISwapFeeConfig;
-  }
+  constructor(private readonly client: OneinchClient) {}
 
   async getQuote(request: IOneinchQuoteRequest): Promise<IOneinchQuoteResponse> {
     try {
       return await this.client.getQuote(request);
     } catch (error) {
       this.logger.warn({ err: error }, '1inch quote request failed');
-      throw new ProviderException(
-        ONEINCH_PROVIDER_NAME,
-        'Unable to fetch swap quote',
-        HttpStatus.BAD_GATEWAY,
-        error,
-      );
+      throw error;
     }
   }
 
@@ -45,12 +35,7 @@ export class OneinchService {
       return await this.client.getSwapTransaction(request);
     } catch (error) {
       this.logger.warn({ err: error }, '1inch swap transaction request failed');
-      throw new ProviderException(
-        ONEINCH_PROVIDER_NAME,
-        `Unable to build swap transaction ${error instanceof Error ? error.message : String(error)}`,
-        HttpStatus.BAD_GATEWAY,
-        error,
-      );
+      throw error;
     }
   }
 
@@ -63,7 +48,7 @@ export class OneinchService {
       return await this.client.getAllowance(chainId, tokenAddress, walletAddress);
     } catch (error) {
       this.logger.warn({ err: error }, '1inch allowance check failed');
-      throw new ProviderException(ONEINCH_PROVIDER_NAME, 'Unable to check token allowance');
+      throw error;
     }
   }
 
@@ -76,7 +61,7 @@ export class OneinchService {
       return await this.client.getApprovalTransaction(chainId, tokenAddress, amount);
     } catch (error) {
       this.logger.warn({ err: error }, '1inch approval transaction request failed');
-      throw new ProviderException(ONEINCH_PROVIDER_NAME, 'Unable to build approval transaction');
+      throw error;
     }
   }
 }

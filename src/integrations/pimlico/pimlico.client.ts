@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IProviderConfig } from '@shared/interfaces';
+import { ProviderHttpError } from '@common/utils';
 import {
   IJsonRpcResponse,
   IPimlicoGasPriceResponse,
@@ -9,6 +10,8 @@ import {
   IUserOperationReceipt,
 } from './types';
 
+// Thin JSON-RPC client wrapper around the Pimlico bundler/paymaster API.
+// See https://docs.pimlico.io - exact method availability depends on the chain/EntryPoint.
 @Injectable()
 export class PimlicoClient {
   private readonly config: IProviderConfig;
@@ -22,9 +25,9 @@ export class PimlicoClient {
     return this.rpcCall<string>('eth_sendUserOperation', [userOperation, entryPoint]);
   }
 
-  // async getUserOperationReceipt(userOpHash: string): Promise<IUserOperationReceipt | null> {
-  //   return this.rpcCall<IUserOperationReceipt | null>('eth_getUserOperationReceipt', [userOpHash]);
-  // }
+  // The RPC result's `transactionHash` is nested under `receipt`, not top-level -
+  // unwrap it here so the rest of the codebase can keep using the flat
+  // IUserOperationReceipt shape.
   async getUserOperationReceipt(userOpHash: string): Promise<IUserOperationReceipt | null> {
     const raw = await this.rpcCall<{
       userOpHash: string;
@@ -32,6 +35,7 @@ export class PimlicoClient {
       success: boolean;
       reason?: string;
     } | null>('eth_getUserOperationReceipt', [userOpHash]);
+
     if (!raw) return null;
     return {
       userOpHash: raw.userOpHash,
@@ -52,6 +56,10 @@ export class PimlicoClient {
     return this.rpcCall<IPimlicoGasPriceResponse>('pimlico_getUserOperationGasPrice', []);
   }
 
+  // Sponsors a UserOperation's gas via Pimlico's verifying paymaster. Per-user/
+  // per-transaction/global spend caps are enforced by Pimlico itself via the
+  // configured Sponsorship Policy (see docs.pimlico.io/guides/how-to/sponsorship-policies)
+  // - not re-implemented here. Pimlico simply declines this call once a cap is hit.
   async sponsorUserOperation(
     userOperation: IUserOperation,
     entryPoint: string,
@@ -65,7 +73,6 @@ export class PimlicoClient {
   }
 
   private async rpcCall<T>(method: string, params: unknown[]): Promise<T> {
-    console.log('rpcCall gas', method, params);
     const response = await this.request<IJsonRpcResponse<T>>('', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -73,8 +80,12 @@ export class PimlicoClient {
     });
 
     if (response.error) {
-      throw new Error(
-        `Pimlico RPC error ${method} (${response.error.code}): ${response.error.message}`,
+      // Pimlico's bundler reports logical failures (AA21/AA24/maxFeePerGas-too-low/...)
+      // as a 200 OK with this error object, never as an HTTP 4xx/5xx - so the JSON-RPC
+      // error code is the only real "provider status" available here.
+      throw new ProviderHttpError(
+        `Pimlico RPC error (${response.error.code}): ${response.error.message}`,
+        response.error.code,
       );
     }
 
@@ -82,7 +93,6 @@ export class PimlicoClient {
   }
 
   protected async request<T>(path: string, init?: RequestInit): Promise<T> {
-    console.log('request', path, init, `${this.config.baseUrl}${path}`);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
 
@@ -93,7 +103,12 @@ export class PimlicoClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Pimlico request failed with status ${response.status}`);
+        const errorBody = await response.text();
+        throw new ProviderHttpError(
+          `Pimlico request failed with status ${response.status}: ${errorBody}`,
+          response.status,
+          errorBody,
+        );
       }
 
       return (await response.json()) as T;

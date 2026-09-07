@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { decodeFunctionResult, encodeFunctionData } from 'viem';
 import { ISafeConfig } from '@core/config/safe.config';
-import { decodeFunctionResult, encodeFunctionData } from 'viem'; // add to your viem import
+import { ProviderHttpError } from '@common/utils';
 
 const ERC20_BALANCE_OF_ABI = [
   {
@@ -12,6 +13,7 @@ const ERC20_BALANCE_OF_ABI = [
     outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
+
 const ERC20_ALLOWANCE_ABI = [
   {
     type: 'function',
@@ -24,6 +26,7 @@ const ERC20_ALLOWANCE_ABI = [
     outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
+
 // Plain standard Ethereum JSON-RPC client (eth_call, eth_getCode, eth_getBalance,
 // eth_getTransactionCount, eth_sendRawTransaction, eth_chainId). Pimlico's bundler/
 // paymaster endpoint (see PimlicoClient) does NOT implement these - it only supports
@@ -70,6 +73,7 @@ export class ChainRpcClient {
 
     return balance.toString();
   }
+
   // Used for the LiFi swap path - LiFi has no dedicated allowance-check API (unlike
   // 1inch's /approve/allowance), so this reads the ERC20 allowance directly on-chain.
   async getAllowance(
@@ -117,10 +121,14 @@ export class ChainRpcClient {
         body: JSON.stringify({ jsonrpc: '2.0', id: this.nextRequestId++, method, params }),
         signal: controller.signal,
       });
-      console.log('Request', response, this.rpcUrl);
 
       if (!response.ok) {
-        throw new Error(`Chain RPC request failed with status ${response.status}`);
+        const errorBody = await response.text();
+        throw new ProviderHttpError(
+          `Chain RPC request failed with status ${response.status}: ${errorBody}`,
+          response.status,
+          errorBody,
+        );
       }
 
       const json = (await response.json()) as {
@@ -129,7 +137,13 @@ export class ChainRpcClient {
       };
 
       if (json.error) {
-        throw new Error(`Chain RPC error (${json.error.code}): ${json.error.message}`);
+        // Standard JSON-RPC error - reported as a 200 OK with this error object, not a
+        // real HTTP 4xx/5xx, so the JSON-RPC code is the only real "provider status"
+        // available here (same situation as PimlicoClient's rpcCall).
+        throw new ProviderHttpError(
+          `Chain RPC error (${json.error.code}): ${json.error.message}`,
+          json.error.code,
+        );
       }
 
       return json.result as T;

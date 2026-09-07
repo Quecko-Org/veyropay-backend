@@ -1,9 +1,13 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { ProviderException } from '@common/exceptions';
+import { Injectable, Logger } from '@nestjs/common';
 import { LifiClient } from './lifi.client';
-import { LIFI_PROVIDER_NAME } from './constants';
 import { ILifiQuoteRequest, ILifiQuoteResponse, ILifiStatusResponse } from './types';
+
 // Business modules depend on this service, never on LifiClient directly.
+//
+// getQuote just logs context then rethrows the caught error as-is - LifiClient
+// already throws ProviderHttpError (the real LiFi HTTP status + body) for anything
+// that fails, and GlobalExceptionFilter turns that into a proper API response (real
+// status/code, not a blind 502) without this layer needing to re-wrap anything.
 @Injectable()
 export class LifiService {
   private readonly logger = new Logger(LifiService.name);
@@ -12,20 +16,13 @@ export class LifiService {
 
   async getQuote(request: ILifiQuoteRequest): Promise<ILifiQuoteResponse> {
     try {
-      console.log('LIFIII');
-
       return await this.client.getQuote(request);
     } catch (error) {
       this.logger.warn({ err: error }, 'LiFi quote request failed');
-      throw new ProviderException(
-        LIFI_PROVIDER_NAME,
-        'Unable to fetch cross-chain route',
-        HttpStatus.BAD_GATEWAY,
-      );
+      throw error;
     }
   }
 
-  // ...inside the class, after getQuote:
   // Returns null (not a throw) on failure - callers poll this in a loop, so a
   // transient error should just be retried on the next attempt rather than aborting.
   async getStatus(

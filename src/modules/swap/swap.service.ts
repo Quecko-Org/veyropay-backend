@@ -149,7 +149,7 @@ export class SwapService {
       walletId: wallet.id,
       type: TransactionType.SWAP,
       chain: dto.toChain,
-      asset: dto.toAsset,
+      asset: dto.toAsset, 
       amount: dto.amount,
       fee: dto.fee,
       provider: isCrossChain ? 'lifi' : 'oneinch',

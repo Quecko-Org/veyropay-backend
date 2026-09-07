@@ -107,10 +107,9 @@ export class TurnkeyService {
     } catch (error) {
       this.logger.warn({ err: error }, 'Turnkey OAuth login failed');
       throw new ProviderException(
-        TURNKEY_PROVIDER_NAME,
+        TURNKEY_PROVIDER_NAME, 
         'Unable to complete OAuth login',
         HttpStatus.UNAUTHORIZED,
-        error,
       );
     }
   }

@@ -324,7 +324,7 @@ export class WalletService {
       const balance = await this.pimlicoService.getNativeBalance(sender);
 
       if (balance < amount) {
-        throw new ConflictException('Insufficient ETH balance for transfer');
+        throw new ConflictException('Insufficient balance for transfer');
       }
 
       return;

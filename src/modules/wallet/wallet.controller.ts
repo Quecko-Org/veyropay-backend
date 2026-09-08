@@ -7,6 +7,7 @@ import { PaginationQueryDto } from '@shared/dto';
 import { WalletService } from './wallet.service';
 import { PrepareUserOperationDto } from './dto/prepare-user-operation.dto';
 import { ExecuteUserOperationDto } from './dto/execute-user-operation.dto';
+import { ListTransactionsQueryDto } from '../transaction/dto/list-transactions-query.dto';
 
 @ApiTags('wallet')
 @ApiBearerAuth()
@@ -33,12 +34,17 @@ export class WalletController {
     return this.walletService.prepareUserOperation(user.sub, dto);
   }
 
+
+
   @Get('transactions')
-  @ApiOperation({ summary: 'List transactions for the authenticated user wallet' })
-  listTransactions(@CurrentUser() user: IJwtPayload, @Query() query: PaginationQueryDto) {
+  @ApiOperation({
+    summary:
+      'List transactions for the authenticated user wallet, optionally filtered by type ' +
+      '(transfer, swap, card_payment, ...)',
+  })
+  listTransactions(@CurrentUser() user: IJwtPayload, @Query() query: ListTransactionsQueryDto) {
     return this.walletService.listTransactions(user.sub, query);
   }
-
   // ...after prepareUserOperation():
   @Post('user-operations/execute')
   @ApiOperation({

@@ -19,7 +19,8 @@ import { WalletEntity } from './entities/wallet.entity';
 import { PrepareUserOperationDto } from './dto/prepare-user-operation.dto';
 import { PreparedUserOperationDto } from './dto/prepared-user-operation.dto';
 import { BASE_CHAIN_ID } from './constants';
-
+// import line, near the top:
+import { ListTransactionsQueryDto } from '@modules/transaction/dto/list-transactions-query.dto';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * ONE_DAY_MS;
 
@@ -129,7 +130,6 @@ export class WalletService {
 
     const sender = wallet.smartAccountAddress as Address;
 
-    console.log('sender', sender);
 
     const value = BigInt(dto.value ?? '0');
     const data = (dto.data ?? '0x') as Hex;
@@ -242,8 +242,12 @@ export class WalletService {
     }
 
     const callGasLimit = sponsorship?.callGasLimit ?? gasEstimate.callGasLimit;
-    const verificationGasLimit =
-      sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit;
+    const rawVerificationGasLimit = BigInt(
+      sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit,
+    );
+    const verificationGasLimit = `0x${((rawVerificationGasLimit * 120n) / 100n).toString(16)}`;
+
+  
     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
     console.log(
       'else gasEstimate',
@@ -322,7 +326,7 @@ export class WalletService {
     if (!dto.tokenAddress) {
       const amount = BigInt(dto.value ?? '0');
       const balance = await this.pimlicoService.getNativeBalance(sender);
-
+console.log("asharamount balance",amount ,balance)
       if (balance < amount) {
         throw new ConflictException('Insufficient balance for transfer');
       }
@@ -491,6 +495,8 @@ export class WalletService {
   // user-facing business events, not what a utility call like this represents. Callers
   // needing status tracking should poll PimlicoService.getReceipt with the returned hash.
   async executeUserOperation(signedUserOperation: Record<string, unknown>): Promise<string> {
+    console.log("executeUserOperation")
+
     return this.pimlicoService.submitUserOperation(signedUserOperation);
   }
 
@@ -547,9 +553,11 @@ export class WalletService {
 
   async listTransactions(
     userId: string,
-    query: PaginationQueryDto,
+    query: ListTransactionsQueryDto,
   ): Promise<PaginatedResultDto<TransactionEntity>> {
     const wallet = await this.getByUserId(userId);
     return this.transactionService.listForWallet(wallet.id, query);
   }
+  // the listTransactions method signature:
+
 }

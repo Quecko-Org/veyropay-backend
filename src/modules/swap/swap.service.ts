@@ -11,10 +11,12 @@ import { IUserOperationReceipt } from '@integrations/pimlico/types';
 import { ILifiStatusResponse } from '@integrations/lifi/types';
 import { PreviewSwapDto } from './dto/preview-swap.dto';
 import { ExecuteSwapDto } from './dto/execute-swap.dto';
-
+import { getErrorMessage, ProviderHttpError } from '@common/utils';
 import { Address, encodeFunctionData } from 'viem';
 // ...existing imports...
 import { CheckSwapApprovalDto } from './dto/check-swap-approval.dto';
+import { ISwapFeeConfig } from '@app/core/config';
+import { ConfigService } from '@nestjs/config';
 
 const ERC20_APPROVE_ABI = [
   {
@@ -48,7 +50,7 @@ const BRIDGE_POLL_INTERVAL_MS = 15000;
 @Injectable()
 export class SwapService {
   private readonly logger = new Logger(SwapService.name);
-
+  private readonly swapFeeConfig: ISwapFeeConfig;
   constructor(
     private readonly oneinchService: OneinchService,
     private readonly lifiService: LifiService,
@@ -56,14 +58,18 @@ export class SwapService {
     private readonly transactionService: TransactionService,
     private readonly notificationService: NotificationService,
     private readonly pimlicoService: PimlicoService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.swapFeeConfig = configService.get<ISwapFeeConfig>('swapFee') as ISwapFeeConfig;
+  }
 
   async previewQuote(dto: PreviewSwapDto) {
-    console.log('dto', dto);
-
+    console.log(' previewQuotedto', dto);
+try{
     if (dto.fromChain === dto.toChain) {
       console.log('oneinch');
-      return this.oneinchService.getSwapTransaction({
+    
+      const response = await this.oneinchService.getSwapTransaction({
         chainId: Number(dto.fromChain),
         src: dto.fromAsset,
         dst: dto.toAsset,
@@ -71,6 +77,14 @@ export class SwapService {
         from: dto.fromAddress,
         slippage: dto.slippage ?? 1,
       });
+
+      // Unlike LiFi's feeCosts, 1inch never reports its own referrer-fee deduction as
+      // a separate line item - it's baked directly into dstAmount. We set the
+      // percentage ourselves (swapFeeConfig), so back-compute what was taken rather
+      // than leaving the client with no fee figure at all for a same-chain swap.
+      return { ...response, estimatedFee: this.estimateOneinchFee(response.dstAmount) };
+
+
     }
 
     return this.lifiService.getQuote({
@@ -81,7 +95,37 @@ export class SwapService {
       fromAmount: dto.amount,
       fromAddress: dto.fromAddress,
     });
+
+  }catch(error){
+    if (error instanceof ProviderHttpError && error.body?.includes('NO_POSSIBLE_ROUTE')) {
+      throw new BadRequestException(
+        'This amount is too small to find a cross-chain route - try a larger amount.',
+      );
+    }
+    throw error;
   }
+  }
+
+    // dstAmount already has the fee removed (1inch applies it internally via the
+  // fee/referrer params - see OneinchClient.applySwapFee), so the pre-fee amount was
+  // dstAmount / (1 - pct/100), and the fee is the difference. Same condition as
+  // applySwapFee - only meaningful when both a percentage AND a recipient are actually
+  // configured. Floating-point, for display only - never used for accounting/
+  // settlement, only PreviewSwapDto's own fee param passed at execute time matters
+  // for what's actually recorded (see ExecuteSwapDto.fee).
+  private estimateOneinchFee(dstAmount: string): string {
+    if (this.swapFeeConfig.percentage <= 0 || !this.swapFeeConfig.recipientAddress) {
+      return '0';
+    }
+
+    const postFee = Number(dstAmount);
+    const preFee = postFee / (1 - this.swapFeeConfig.percentage / 100);
+
+    return Math.round(preFee - postFee).toString();
+  }
+
+
+
 
   // A token-input swap needs the router to be able to pull the source token via
   // transferFrom() - that requires a prior ERC20 approve() from the Safe, which is
@@ -89,14 +133,14 @@ export class SwapService {
   // source; skip it entirely for a native-ETH source (no approval concept applies).
   async checkApproval(dto: CheckSwapApprovalDto): Promise<ICheckApprovalResult> {
     const isCrossChain = dto.fromChain !== dto.toChain;
-
+console.log("approval",dto)
     if (!isCrossChain) {
       const { allowance } = await this.oneinchService.getAllowance(
         Number(dto.fromChain),
         dto.tokenAddress,
         dto.ownerAddress,
       );
-      console.log('allowance', allowance);
+      console.log('allowance', allowance,BigInt(allowance) >= BigInt(dto.amount));
 
       if (BigInt(allowance) >= BigInt(dto.amount)) {
         return { needsApproval: false };
@@ -159,7 +203,7 @@ export class SwapService {
       const userOpHash = await this.pimlicoService.submitUserOperation(dto.signedUserOperation);
       console.log('uerOphas', userOpHash);
       const submitted = await this.transactionService.recordSubmitted(transaction.id, userOpHash);
-
+console.log("submitted",submitted)
       void this.finalizeOnceReceiptKnown(transaction.id, userId, userOpHash, dto);
 
       return submitted;

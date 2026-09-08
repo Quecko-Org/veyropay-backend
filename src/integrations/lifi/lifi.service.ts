@@ -18,7 +18,7 @@ export class LifiService {
     try {
       return await this.client.getQuote(request);
     } catch (error) {
-      this.logger.warn({ err: error }, 'LiFi quote request failed');
+      // this.logger.warn({ err: error }, 'LiFi quote request failed');
       throw error;
     }
   }

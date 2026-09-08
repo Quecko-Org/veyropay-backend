@@ -1,7 +1,9 @@
+
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BaseRepository } from '@database/base.repository';
+import { TransactionType } from '@shared/enums';
 import { TransactionEntity } from '../entities/transaction.entity';
 
 @Injectable()
@@ -14,9 +16,10 @@ export class TransactionRepository extends BaseRepository<TransactionEntity> {
     walletId: string,
     skip: number,
     take: number,
+    type?: TransactionType,
   ): Promise<[TransactionEntity[], number]> {
     return this.repository.findAndCount({
-      where: { walletId },
+      where: { walletId, ...(type ? { type } : {}) },
       order: { createdAt: 'DESC' },
       skip,
       take,

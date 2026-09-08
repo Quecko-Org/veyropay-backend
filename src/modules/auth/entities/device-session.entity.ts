@@ -27,9 +27,9 @@ export class DeviceSessionEntity extends BaseEntity {
   @Column({ type: 'enum', enum: DeviceSessionStatus, default: DeviceSessionStatus.ACTIVE })
   status!: DeviceSessionStatus;
 
-  @Column({ name: 'fcm_token', nullable: true })
-  fcmToken?: string;
+  // @Column({ name: 'fcm_token', nullable: true })
+  // fcmToken?: string;
 
-  @Column({ name: 'fcm_updated_at', type: 'timestamptz', nullable: true })
-  fcmUpdatedAt?: Date;
+  // @Column({ name: 'fcm_updated_at', type: 'timestamptz', nullable: true })
+  // fcmUpdatedAt?: Date;
 }

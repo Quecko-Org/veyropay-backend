@@ -139,19 +139,20 @@ export class GuardianService {
       invitationUrl: this.invitationUrl(),
     });
 
-    return toGuardianResponse(saved);
+    const targetWallet = await this.walletService.findByUserId(target.id);
+    return toGuardianResponse(saved, targetWallet);
   }
 
   async listOutgoing(callerId: string): Promise<GuardianResponseDto[]> {
     const wallet = await this.walletService.getByUserId(callerId);
     const rows = await this.guardianRepository.findOutgoingForWallet(wallet.id);
-    return rows.map((row) => toGuardianResponse(row));
+    return this.toGuardianResponses(rows);
   }
 
   async listIncoming(callerId: string): Promise<GuardianResponseDto[]> {
     const caller = await this.profileService.getById(callerId);
     const rows = await this.guardianRepository.findIncomingForUser(callerId, caller.email);
-    return rows.map((row) => toGuardianResponse(row));
+    return this.toGuardianResponses(rows);
   }
 
   async accept(callerId: string, id: string): Promise<GuardianResponseDto> {
@@ -171,7 +172,7 @@ export class GuardianService {
       `${guardian.guardianName ?? guardian.guardianEmail} accepted your guardian invitation.`,
     );
 
-    return toGuardianResponse(saved);
+    return toGuardianResponse(saved, inviteeWallet);
   }
 
   async decline(callerId: string, id: string): Promise<GuardianResponseDto> {
@@ -185,7 +186,7 @@ export class GuardianService {
       `${guardian.guardianName ?? guardian.guardianEmail} declined your guardian invitation.`,
     );
 
-    return toGuardianResponse(saved);
+    return this.toGuardianResponseWithWallet(saved);
   }
 
   async remove(callerId: string, id: string): Promise<GuardianResponseDto> {
@@ -202,7 +203,35 @@ export class GuardianService {
     guardian.status = GuardianStatus.REMOVED;
     guardian.removedAt = new Date();
     const saved = await this.guardianRepository.save(guardian);
-    return toGuardianResponse(saved);
+    return this.toGuardianResponseWithWallet(saved);
+  }
+
+  private async toGuardianResponses(rows: GuardianEntity[]): Promise<GuardianResponseDto[]> {
+    const userIds = [
+      ...new Set(
+        rows
+          .map((row) => row.guardianUserId)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    ];
+    const wallets = await this.walletService.findByUserIds(userIds);
+    const walletsByUserId = new Map(wallets.map((wallet) => [wallet.userId, wallet]));
+
+    return rows.map((row) =>
+      toGuardianResponse(
+        row,
+        row.guardianUserId ? (walletsByUserId.get(row.guardianUserId) ?? null) : null,
+      ),
+    );
+  }
+
+  private async toGuardianResponseWithWallet(
+    entity: GuardianEntity,
+  ): Promise<GuardianResponseDto> {
+    const guardianWallet = entity.guardianUserId
+      ? await this.walletService.findByUserId(entity.guardianUserId)
+      : null;
+    return toGuardianResponse(entity, guardianWallet);
   }
 
   private async requireActiveUser(userId: string): Promise<UserEntity> {

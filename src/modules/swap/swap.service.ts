@@ -59,10 +59,8 @@ export class SwapService {
   ) {}
 
   async previewQuote(dto: PreviewSwapDto) {
-    console.log('dto', dto);
 
     if (dto.fromChain === dto.toChain) {
-      console.log('oneinch');
       return this.oneinchService.getSwapTransaction({
         chainId: Number(dto.fromChain),
         src: dto.fromAsset,
@@ -96,7 +94,6 @@ export class SwapService {
         dto.tokenAddress,
         dto.ownerAddress,
       );
-      console.log('allowance', allowance);
 
       if (BigInt(allowance) >= BigInt(dto.amount)) {
         return { needsApproval: false };
@@ -107,7 +104,6 @@ export class SwapService {
         dto.tokenAddress,
         dto.amount,
       );
-      console.log('approvalTx', approvalTx);
 
       return { needsApproval: true, transaction: approvalTx };
     }
@@ -157,7 +153,6 @@ export class SwapService {
 
     try {
       const userOpHash = await this.pimlicoService.submitUserOperation(dto.signedUserOperation);
-      console.log('uerOphas', userOpHash);
       const submitted = await this.transactionService.recordSubmitted(transaction.id, userOpHash);
 
       void this.finalizeOnceReceiptKnown(transaction.id, userId, userOpHash, dto);
@@ -185,7 +180,6 @@ export class SwapService {
   ): Promise<void> {
     try {
       const receipt = await this.waitForReceipt(userOpHash);
-      console.log('waitttt', receipt);
       if (!receipt?.success) {
         await this.transactionService.markFailed(transactionId);
         await this.notificationService.notify(

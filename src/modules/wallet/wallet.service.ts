@@ -54,6 +54,10 @@ export class WalletService {
     return this.walletRepository.findByUserId(userId);
   }
 
+  async findByUserIds(userIds: string[]): Promise<WalletEntity[]> {
+    return this.walletRepository.findByUserIds(userIds);
+  }
+
   async findBySmartAccountAddress(address: string): Promise<WalletEntity | null> {
     return this.walletRepository.findBySmartAccountAddress(address);
   }
@@ -84,10 +88,8 @@ export class WalletService {
 
   async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
     const wallet = await this.getByUserId(userId);
-    console.log('EXISTING WALLET ROW', wallet.ownerAddress, wallet.smartAccountAddress);
 
     if (wallet.smartAccountAddress) {
-      console.log('EARLY RETURN - already provisioned, not recomputing');
       return wallet;
     }
 
@@ -95,7 +97,6 @@ export class WalletService {
       userId,
       TURNKEY_ORGANIZATION_PROVIDER_KEY,
     );
-    console.log('ORGANIZATION ID USED', organizationId);
 
     if (!organizationId) {
       throw new ConflictException(
@@ -106,10 +107,8 @@ export class WalletService {
     const ownerAddress = (await this.turnkeyService.getPrimarySignerAddress(
       organizationId,
     )) as Address;
-    console.log('FRESH OWNER ADDRESS FROM TURNKEY', ownerAddress);
 
     const smartAccountAddress = await this.safeService.predictAddress(ownerAddress);
-    console.log('PREDICTED SAFE ADDRESS', smartAccountAddress);
 
     wallet.ownerAddress = ownerAddress;
     wallet.smartAccountAddress = smartAccountAddress;
@@ -129,8 +128,6 @@ export class WalletService {
 
     const sender = wallet.smartAccountAddress as Address;
 
-    console.log('sender', sender);
-
     const value = BigInt(dto.value ?? '0');
     const data = (dto.data ?? '0x') as Hex;
     await this.validateTransferBalance(sender, dto);
@@ -140,8 +137,6 @@ export class WalletService {
       this.pimlicoService.getAccountNonce(sender),
       this.pimlicoService.getGasPrice(),
     ]);
-
-    console.log('deployed, nonce, gasPrice', deployed, nonce, gasPrice);
 
     // EntryPoint v0.7 has no single `initCode` field (that's v0.6) - deployment is
     // expressed as separate `factory`/`factoryData` fields instead, present only when
@@ -159,7 +154,6 @@ export class WalletService {
     const factoryFields = factory && factoryData ? { factory, factoryData } : {};
 
     const callData = buildExecuteUserOpCallData(getAddress(dto.to), value, data);
-    console.log('deployfactoryField', factoryFields, callData);
 
     // Attempt sponsorship FIRST, before any plain (paymaster-free) gas estimate.
     // pm_sponsorUserOperation both estimates gas AND returns paymaster data in one
@@ -187,7 +181,6 @@ export class WalletService {
 
     let gasEstimate: Record<string, string>;
     let sponsorship: typeof sponsorshipAttempt = null;
-    console.log('sponsorshipAttempt gasEstimate', sponsorshipAttempt, sponsorship);
 
     if (sponsorshipAttempt) {
       // These gas numbers are valid execution-gas estimates regardless of whether the
@@ -211,7 +204,6 @@ export class WalletService {
       if (withinBackendCap) {
         sponsorship = sponsorshipAttempt;
       }
-      console.log('if ', sponsorshipAttempt, gasEstimate, withinBackendCap);
     } else {
       try {
         gasEstimate = await this.pimlicoService.estimateGas(
@@ -229,8 +221,7 @@ export class WalletService {
           },
           DEFAULT_ENTRY_POINT,
         );
-      } catch (err) {
-        console.log('Asss', err);
+      } catch {
         // Sponsorship was declined and the sender can't cover its own prefund either
         // (EntryPoint's AA21 revert) - same outcome as the balance check below, just
         // discovered earlier, during simulation instead of a separate balance query.
@@ -245,16 +236,8 @@ export class WalletService {
     const verificationGasLimit =
       sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit;
     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
-    console.log(
-      'else gasEstimate',
-      gasEstimate,
-      callGasLimit,
-      verificationGasLimit,
-      preVerificationGas,
-    );
 
     if (!sponsorship) {
-      console.log('!sponsorship', sponsorship);
 
       // Sponsorship declined (backend cap, Pimlico's policy cap, or otherwise) - the
       // Safe pays its own gas. Check upfront rather than letting the client sign a
@@ -263,7 +246,6 @@ export class WalletService {
         BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas);
       const estimatedCost = totalGas * BigInt(gasPrice.maxFeePerGas);
       const balance = await this.pimlicoService.getNativeBalance(sender);
-      console.log('!totalGas', totalGas, estimatedCost, balance);
 
       if (balance < estimatedCost) {
         throw new ConflictException(
@@ -271,14 +253,11 @@ export class WalletService {
             'wallet does not have enough balance to cover this transaction.',
         );
       }
-      console.log('!balance < estimatedCost', balance < estimatedCost);
     } else {
       // Sponsorship granted - record it against the backend cap. Recorded at
       // prepare-time (not after actual on-chain confirmation) since this is what's
       // being committed to sponsor; a minor over-count from abandoned/unsigned
       // prepares is an acceptable tradeoff for a safety cap, not a billing ledger.
-
-      console.log('!belse sponsoredCost');
 
       const sponsoredCost =
         (BigInt(callGasLimit) + BigInt(verificationGasLimit) + BigInt(preVerificationGas)) *
@@ -290,7 +269,6 @@ export class WalletService {
           chainId: wallet.chainId,
         }),
       );
-      console.log('!belse sponsoredCost', sponsoredCost);
     }
 
     return new PreparedUserOperationDto({

@@ -14,6 +14,17 @@ export class WalletRepository extends BaseRepository<WalletEntity> {
     return this.repository.findOne({ where: { userId } });
   }
 
+  findByUserIds(userIds: string[]): Promise<WalletEntity[]> {
+    if (userIds.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.repository
+      .createQueryBuilder('wallet')
+      .where('wallet.user_id IN (:...userIds)', { userIds })
+      .getMany();
+  }
+
   findBySmartAccountAddress(address: string): Promise<WalletEntity | null> {
     return this.repository
       .createQueryBuilder('wallet')

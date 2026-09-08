@@ -97,7 +97,6 @@ export class TurnkeyClient {
       this.config.organizationId,
       params,
     );
-    console.log('ressss', response);
     return response.activity.result.createSubOrganizationResultV8;
   }
 
@@ -111,10 +110,8 @@ export class TurnkeyClient {
       filterType: 'OIDC_TOKEN',
       filterValue: oidcToken,
     };
-    console.log('dddddd', this.config.apiKey, this.config.apiSecret, body);
     const stamp = await this.stamp(body);
 
-    console.log('stamp created', stamp);
     return this.request<ITurnkeyGetSubOrgIdsResponse>('/public/v1/query/list_suborgs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Stamp': stamp },
@@ -136,7 +133,6 @@ export class TurnkeyClient {
       organizationId,
       params,
     );
-    console.log('oauth response', response);
     return response.activity.result.oauthLoginResult;
   }
 

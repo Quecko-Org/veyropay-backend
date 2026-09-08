@@ -31,7 +31,22 @@ describe('GuardianService', () => {
     status: UserStatus.ACTIVE,
   };
 
-  const wallet = { id: walletId, userId: callerId, ownerAddress: undefined };
+  const wallet = {
+    id: walletId,
+    userId: callerId,
+    smartAccountAddress: '0xOwnerSmartAccount000000000000000000000001',
+    chainId: 8453,
+    status: WalletStatus.ACTIVE,
+    ownerAddress: undefined,
+  };
+
+  const targetWallet = {
+    id: 'wallet-2',
+    userId: targetId,
+    smartAccountAddress: '0xGuardianSmartAccount00000000000000000002',
+    chainId: 8453,
+    status: WalletStatus.ACTIVE,
+  };
 
   const inviteDto: InviteGuardianDto = {
     userId: targetId,
@@ -60,6 +75,7 @@ describe('GuardianService', () => {
   let walletService: {
     getByUserId: jest.Mock;
     findByUserId: jest.Mock;
+    findByUserIds: jest.Mock;
     findBySmartAccountAddress: jest.Mock;
   };
   let notificationService: { notify: jest.Mock };
@@ -84,6 +100,7 @@ describe('GuardianService', () => {
     walletService = {
       getByUserId: jest.fn().mockResolvedValue(wallet),
       findByUserId: jest.fn().mockResolvedValue(null),
+      findByUserIds: jest.fn().mockResolvedValue([]),
       findBySmartAccountAddress: jest.fn().mockResolvedValue(null),
     };
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
@@ -221,10 +238,24 @@ describe('GuardianService', () => {
     });
 
     it('creates an invited guardian and notifies the invitee', async () => {
+      walletService.findByUserId.mockResolvedValue(targetWallet);
+
       const result = await service.invite(callerId, inviteDto);
 
       expect(result.status).toBe('pending');
       expect(result.relationship).toBe(GuardianRelationship.FRIEND);
+      expect(result.owner?.wallet).toEqual({
+        id: wallet.id,
+        smartAccountAddress: wallet.smartAccountAddress,
+        chainId: wallet.chainId,
+        status: WalletStatus.ACTIVE,
+      });
+      expect(result.guardian?.wallet).toEqual({
+        id: targetWallet.id,
+        smartAccountAddress: targetWallet.smartAccountAddress,
+        chainId: targetWallet.chainId,
+        status: WalletStatus.ACTIVE,
+      });
       expect(guardianRepository.save).toHaveBeenCalled();
       expect(notificationService.notify).toHaveBeenCalled();
       expect(sendgridService.sendGuardianInvitation).toHaveBeenCalledWith(
@@ -344,7 +375,9 @@ describe('GuardianService', () => {
         canSeeBalance: false,
         canBeRemoved: true,
         guardianEmail: target.email,
+        guardianUserId: targetId,
         guardianUser: target,
+        wallet: { ...wallet, user: caller },
       },
       {
         id: 'g-pending',
@@ -356,7 +389,9 @@ describe('GuardianService', () => {
         canSeeBalance: false,
         canBeRemoved: true,
         guardianEmail: target.email,
+        guardianUserId: targetId,
         guardianUser: target,
+        wallet: { ...wallet, user: caller },
       },
       {
         id: 'g-active',
@@ -368,29 +403,39 @@ describe('GuardianService', () => {
         canSeeBalance: false,
         canBeRemoved: true,
         guardianEmail: target.email,
+        guardianUserId: targetId,
         guardianUser: target,
+        wallet: { ...wallet, user: caller },
       },
     ];
 
     it('lists outgoing without a status filter', async () => {
       guardianRepository.findOutgoingForWallet.mockResolvedValue(mixed);
+      walletService.findByUserIds.mockResolvedValue([targetWallet]);
 
       const result = await service.listOutgoing(callerId);
 
       expect(guardianRepository.findOutgoingForWallet).toHaveBeenCalledWith(walletId);
       expect(guardianRepository.findOutgoingForWallet).toHaveBeenCalledTimes(1);
+      expect(walletService.findByUserIds).toHaveBeenCalledWith([targetId]);
       expect(result.map((row) => row.id)).toEqual(['g-rejected', 'g-pending', 'g-active']);
       expect(result.map((row) => row.status)).toEqual(['rejected', 'pending', 'approved']);
+      expect(result[0].owner?.wallet?.smartAccountAddress).toBe(wallet.smartAccountAddress);
+      expect(result[0].guardian?.wallet?.smartAccountAddress).toBe(
+        targetWallet.smartAccountAddress,
+      );
     });
 
     it('lists incoming for all statuses (pending, approved, rejected)', async () => {
       guardianRepository.findIncomingForUser.mockResolvedValue(mixed);
+      walletService.findByUserIds.mockResolvedValue([targetWallet]);
 
       const result = await service.listIncoming(targetId);
 
       expect(guardianRepository.findIncomingForUser).toHaveBeenCalledWith(targetId, target.email);
       expect(result).toHaveLength(3);
       expect(result.map((row) => row.status).sort()).toEqual(['approved', 'pending', 'rejected']);
+      expect(result.every((row) => row.guardian?.wallet?.id === targetWallet.id)).toBe(true);
     });
   });
 });

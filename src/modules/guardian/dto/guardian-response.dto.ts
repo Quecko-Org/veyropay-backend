@@ -114,9 +114,14 @@ export function toClientStatus(status: GuardianEntity['status']): GuardianRespon
   return 'rejected';
 }
 
-export function toGuardianResponse(entity: GuardianEntity): GuardianResponseDto {
+export function toGuardianResponse(
+  entity: GuardianEntity,
+  guardianWallet?: WalletEntity | null,
+): GuardianResponseDto {
   const guardianUser = entity.guardianUser;
   const ownerUser = entity.wallet?.user;
+  // entity.wallet is the owner's wallet (guardians.wallet_id → wallets).
+  const ownerWallet = entity.wallet ?? null;
 
   return new GuardianResponseDto({
     id: entity.id,
@@ -127,14 +132,14 @@ export function toGuardianResponse(entity: GuardianEntity): GuardianResponseDto 
     canSeeBalance: entity.canSeeBalance,
     canBeRemoved: entity.canBeRemoved,
     guardian: guardianUser
-      ? toUserCard(guardianUser)
+      ? toUserCard(guardianUser, guardianWallet)
       : new GuardianUserCardDto({
           id: entity.guardianUserId ?? entity.id,
           email: entity.guardianEmail,
           displayName: entity.guardianName,
           wallet: null,
         }),
-    owner: ownerUser ? toUserCard(ownerUser) : undefined,
+    owner: ownerUser ? toUserCard(ownerUser, ownerWallet) : undefined,
     invitedAt: entity.invitedAt,
     verifiedAt: entity.verifiedAt,
     createdAt: entity.createdAt,

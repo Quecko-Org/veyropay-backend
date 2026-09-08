@@ -151,7 +151,6 @@ console.log("approval",dto)
         dto.tokenAddress,
         dto.amount,
       );
-      console.log('approvalTx', approvalTx);
 
       return { needsApproval: true, transaction: approvalTx };
     }
@@ -201,7 +200,6 @@ console.log("approval",dto)
 
     try {
       const userOpHash = await this.pimlicoService.submitUserOperation(dto.signedUserOperation);
-      console.log('uerOphas', userOpHash);
       const submitted = await this.transactionService.recordSubmitted(transaction.id, userOpHash);
 console.log("submitted",submitted)
       void this.finalizeOnceReceiptKnown(transaction.id, userId, userOpHash, dto);
@@ -229,7 +227,6 @@ console.log("submitted",submitted)
   ): Promise<void> {
     try {
       const receipt = await this.waitForReceipt(userOpHash);
-      console.log('waitttt', receipt);
       if (!receipt?.success) {
         await this.transactionService.markFailed(transactionId);
         await this.notificationService.notify(

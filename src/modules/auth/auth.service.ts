@@ -94,9 +94,7 @@ export class AuthService {
   // See docs.turnkey.com/features/authentication/social-logins.
   async oauthLogin(dto: OauthLoginDto): Promise<OauthLoginResultDto> {
     let organizationId = await this.turnkeyService.findSubOrganizationByOidcToken(dto.oidcToken);
-    console.log('OAUTH LOOKUP RESULT', organizationId); // <-- add this
     if (!organizationId) {
-      console.log('NO MATCH - creating new sub-org'); // <-- add this
       const result = await this.turnkeyService.provisionSubOrganization({
         subOrganizationName: `${dto.userName ?? dto.providerName} organization`,
         rootUsers: [
@@ -115,16 +113,13 @@ export class AuthService {
         },
       });
       organizationId = result.subOrganizationId;
-
-      console.log('NEW SUB-ORG CREATED', organizationId); // <-- add this
     }
-    console.log('loginnn', organizationId);
+
     const loginResult = await this.turnkeyService.loginWithOauth(organizationId, {
       organizationId,
       oidcToken: dto.oidcToken,
       publicKey: dto.apiPublicKey,
     });
-    console.log('loginResult', loginResult);
     return new OauthLoginResultDto({ sessionJwt: loginResult.session });
   }
 
@@ -137,7 +132,6 @@ export class AuthService {
     const identity = await this.turnkeyService.verifySessionToken(dto.sessionJwt);
 
     const user = await this.profileService.findOrCreateByTurnkeyUserId(identity.userId, dto.email);
-    console.log('user', user, dto);
     // Persisted so smart account provisioning can look up the user's Turnkey
     // sub-organization later without requiring the client to resend it.
     await this.profileService.setProviderReference(
@@ -145,7 +139,6 @@ export class AuthService {
       TURNKEY_ORGANIZATION_PROVIDER_KEY,
       identity.organizationId,
     );
-    console.log('identity', identity);
     // Wallet creation is automatic and transparent per docs/02_PRODUCT_REQUIREMENTS.md,
     // even though the on-chain smart account provider is still pending a decision.
     await this.walletService.getOrCreatePendingWallet(user.id);

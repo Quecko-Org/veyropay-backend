@@ -97,7 +97,7 @@ try{
     });
 
   }catch(error){
-    if (error instanceof ProviderHttpError && error.body?.includes('NO_POSSIBLE_ROUTE')) {
+    if (error instanceof ProviderHttpError && (error.body?.includes('NO_POSSIBLE_ROUTE') || error.body?.includes('No available quotes'))) {
       throw new BadRequestException(
         'This amount is too small to find a cross-chain route - try a larger amount.',
       );

@@ -524,7 +524,7 @@ console.log("asharamount balance",amount ,balance)
       throw new ConflictException(
         `threshold must be between 1 and the active guardian count (${activeGuardianCount})`,
       );
-    }
+    } 
 
     wallet.guardianThreshold = threshold;
     return this.walletRepository.save(wallet);

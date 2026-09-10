@@ -19,7 +19,7 @@ describe('RecoveryService', () => {
   const owner = {
     id: ownerId,
     email: 'owner@example.com',
-    displayName: 'Alex',
+    displayName: 'Alex Won',
     status: UserStatus.ACTIVE,
   };
 

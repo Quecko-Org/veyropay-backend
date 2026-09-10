@@ -152,6 +152,45 @@ export class PimlicoService {
     }
   }
 
+  async getRecoveryHashWithNonce(
+    safeAddress: Address,
+    newOwnerAddress: Address,
+  ): Promise<{ hash: `0x${string}`; nonce: bigint }> {
+    const nonce = await this.getSocialRecoveryNonce(safeAddress);
+    try {
+      const result = await this.chainRpcClient.ethCall(
+        this.safeService.getRecoveryModuleAddress(),
+        this.safeService.buildGetRecoveryHashCallData(safeAddress, newOwnerAddress, nonce),
+      );
+      const hash = decodeFunctionResult({
+        abi: SOCIAL_RECOVERY_MODULE_ABI,
+        functionName: 'getRecoveryHash',
+        data: result as `0x${string}`,
+      });
+      return { hash, nonce };
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Recovery hash computation failed');
+      throw error;
+    }
+  }
+
+  async isSocialRecoveryGuardian(safeAddress: Address, guardianAddress: Address): Promise<boolean> {
+    try {
+      const result = await this.chainRpcClient.ethCall(
+        this.safeService.getRecoveryModuleAddress(),
+        this.safeService.buildIsGuardianCallData(safeAddress, guardianAddress),
+      );
+      return decodeFunctionResult({
+        abi: SOCIAL_RECOVERY_MODULE_ABI,
+        functionName: 'isGuardian',
+        data: result as `0x${string}`,
+      });
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Recovery module isGuardian check failed');
+      throw error;
+    }
+  }
+
   // Attempts to sponsor a UserOperation's gas. Returns null (not a throw) when
   // sponsorship is declined - e.g. the configured Sponsorship Policy's per-user,
   // per-transaction, or global cap has been reached - so the caller can fall back to

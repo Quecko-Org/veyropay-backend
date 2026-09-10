@@ -12,6 +12,7 @@ import {
   buildAddGuardianWithThresholdCallData,
   buildChangeThresholdCallData,
   buildGetRecoveryHashCallData,
+  buildIsGuardianCallData,
   buildMultiConfirmRecoveryCallData,
   buildRecoveryNonceCallData,
   IGuardianSignature,
@@ -197,6 +198,10 @@ export class SafeService {
 
   buildRecoveryNonceCallData(walletAddress: Address): Hex {
     return buildRecoveryNonceCallData(walletAddress);
+  }
+
+  buildIsGuardianCallData(walletAddress: Address, guardianAddress: Address): Hex {
+    return buildIsGuardianCallData(walletAddress, guardianAddress);
   }
 
   async getSafeInfo(safeAddress: string): Promise<ISafeInfo> {

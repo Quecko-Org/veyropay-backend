@@ -87,6 +87,10 @@ export class WalletService {
     return wallet;
   }
 
+  async save(wallet: WalletEntity): Promise<WalletEntity> {
+    return this.walletRepository.save(wallet);
+  }
+
   async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
     const wallet = await this.getByUserId(userId);
 
@@ -305,7 +309,7 @@ export class WalletService {
     if (!dto.tokenAddress) {
       const amount = BigInt(dto.value ?? '0');
       const balance = await this.pimlicoService.getNativeBalance(sender);
-console.log("asharamount balance",amount ,balance)
+      console.log("asharamount balance",amount ,balance)
       if (balance < amount) {
         throw new ConflictException('Insufficient balance for transfer');
       }

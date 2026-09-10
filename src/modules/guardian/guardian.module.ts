@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SendgridModule } from '@integrations/sendgrid/sendgrid.module';
+import { SafeModule } from '@integrations/safe/safe.module';
 import { NotificationModule } from '@modules/notification/notification.module';
 import { ProfileModule } from '@modules/profile/profile.module';
 import { WalletModule } from '@modules/wallet/wallet.module';
@@ -16,6 +17,7 @@ import { GuardianRepository } from './repositories/guardian.repository';
     WalletModule,
     NotificationModule,
     SendgridModule,
+    SafeModule,
   ],
   controllers: [GuardianController],
   providers: [GuardianService, GuardianRepository],

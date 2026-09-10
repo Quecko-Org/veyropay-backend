@@ -45,6 +45,9 @@ export class RecoveryRequestEntity extends BaseEntity {
   @Column({ name: 'recovery_hash', nullable: true })
   recoveryHash?: string;
 
+  @Column({ name: 'recovery_nonce', nullable: true })
+  recoveryNonce?: string;
+
   @OneToMany(() => RecoveryApprovalEntity, (approval) => approval.recoveryRequest)
   approvals?: RecoveryApprovalEntity[];
 }

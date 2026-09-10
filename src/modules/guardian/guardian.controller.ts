@@ -67,6 +67,20 @@ export class GuardianController {
     return this.guardianService.invite(user.sub, dto);
   }
 
+  @Get(':id/on-chain-registration')
+  @ApiOperation({
+    summary: 'Get Safe UserOp calldata to register an accepted guardian on-chain',
+    description:
+      'Owner must submit enableModule (if needed) then addGuardian via ' +
+      'POST /wallet/user-operations/prepare + execute. Required before social recovery.',
+  })
+  getOnChainRegistration(
+    @CurrentUser() user: IJwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.guardianService.getOnChainRegistration(user.sub, id);
+  }
+
   @Patch(':id/accept')
   @ApiOperation({ summary: 'Accept a received guardian invitation' })
   accept(@CurrentUser() user: IJwtPayload, @Param('id', ParseUUIDPipe) id: string) {

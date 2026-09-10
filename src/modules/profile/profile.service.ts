@@ -42,6 +42,10 @@ export class ProfileService {
     return this.userRepository.findByEmail(email);
   }
 
+  async findByTurnkeyUserId(turnkeyUserId: string): Promise<UserEntity | null> {
+    return this.userRepository.findByTurnkeyUserId(turnkeyUserId);
+  }
+
   async update(id: string, dto: UpdateProfileDto): Promise<UserEntity> {
     const user = await this.getById(id);
     Object.assign(user, dto);

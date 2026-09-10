@@ -141,6 +141,22 @@ export class RecoveryRequestDto {
   @ApiProperty({ type: [RecoveryApprovalItemDto] })
   approvals!: RecoveryApprovalItemDto[];
 
+  @ApiPropertyOptional({
+    description: 'On-chain SocialRecoveryModule hash guardians must sign (EIP-712 digest)',
+  })
+  recoveryHash?: string;
+
+  @ApiPropertyOptional({ description: 'Module nonce used when recoveryHash was computed' })
+  recoveryNonce?: string;
+
+  @ApiPropertyOptional({
+    description: 'EIP-712 typed data for guardian Turnkey / wallet signTypedData',
+  })
+  typedData?: Record<string, unknown>;
+
+  @ApiPropertyOptional()
+  executionTxHash?: string;
+
   @ApiPropertyOptional()
   expiresAt?: Date;
 
@@ -168,6 +184,9 @@ export class IncomingRecoveryItemDto {
     requiredApprovals: number;
     approvalsCount: number;
     ownerDisplayName?: string;
+    recoveryHash?: string;
+    recoveryNonce?: string;
+    typedData?: Record<string, unknown>;
     createdAt: Date;
     expiresAt?: Date;
   };
@@ -198,6 +217,9 @@ export class RecoveryDecisionDto {
 
   @ApiProperty({ enum: RecoveryRequestStatus })
   recoveryStatus!: RecoveryRequestStatus;
+
+  @ApiPropertyOptional()
+  executionTxHash?: string;
 
   constructor(partial: RecoveryDecisionDto) {
     Object.assign(this, partial);
@@ -275,7 +297,10 @@ export function toApprovalItem(approval: RecoveryApprovalEntity): RecoveryApprov
   });
 }
 
-export function toRecoveryRequestDto(entity: RecoveryRequestEntity): RecoveryRequestDto {
+export function toRecoveryRequestDto(
+  entity: RecoveryRequestEntity,
+  typedData?: Record<string, unknown>,
+): RecoveryRequestDto {
   const approvals = entity.approvals ?? [];
   const guardiansCanMoveFunds = approvals.some((row) => row.guardian?.canMoveFunds === true);
 
@@ -289,12 +314,19 @@ export function toRecoveryRequestDto(entity: RecoveryRequestEntity): RecoveryReq
     guardiansRegistered: approvals.length,
     guardiansCanMoveFunds,
     approvals: approvals.map(toApprovalItem),
+    recoveryHash: entity.recoveryHash,
+    recoveryNonce: entity.recoveryNonce,
+    typedData,
+    executionTxHash: entity.executionTxHash,
     expiresAt: entity.expiresAt,
     createdAt: entity.createdAt,
   });
 }
 
-export function toIncomingItem(approval: RecoveryApprovalEntity): IncomingRecoveryItemDto {
+export function toIncomingItem(
+  approval: RecoveryApprovalEntity,
+  typedData?: Record<string, unknown>,
+): IncomingRecoveryItemDto {
   const request = approval.recoveryRequest;
   const approvals = request.approvals ?? [];
 
@@ -309,6 +341,9 @@ export function toIncomingItem(approval: RecoveryApprovalEntity): IncomingRecove
       requiredApprovals: request.requiredApprovals,
       approvalsCount: countApproved(approvals),
       ownerDisplayName: request.wallet?.user?.displayName,
+      recoveryHash: request.recoveryHash,
+      recoveryNonce: request.recoveryNonce,
+      typedData,
       createdAt: request.createdAt,
       expiresAt: request.expiresAt,
     },

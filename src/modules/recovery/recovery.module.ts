@@ -5,6 +5,8 @@ import { GuardianRepository } from '@modules/guardian/repositories/guardian.repo
 import { NotificationModule } from '@modules/notification/notification.module';
 import { ProfileModule } from '@modules/profile/profile.module';
 import { WalletModule } from '@modules/wallet/wallet.module';
+import { PimlicoModule } from '@integrations/pimlico/pimlico.module';
+import { SafeModule } from '@integrations/safe/safe.module';
 import { RecoveryApprovalEntity } from './entities/recovery-approval.entity';
 import { RecoveryRequestEntity } from './entities/recovery-request.entity';
 import { RecoveryApprovalRepository } from './repositories/recovery-approval.repository';
@@ -18,6 +20,8 @@ import { RecoveryService } from './recovery.service';
     ProfileModule,
     WalletModule,
     NotificationModule,
+    PimlicoModule,
+    SafeModule,
   ],
   controllers: [RecoveryController],
   providers: [

@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { getAddress } from 'viem';
 import { IAppConfig } from '@core/config/app.config';
 import { SendgridService } from '@integrations/sendgrid/sendgrid.service';
+import { SafeService } from '@integrations/safe/safe.service';
 import { NotificationService } from '@modules/notification/notification.service';
 import { ProfileService } from '@modules/profile/profile.service';
 import { UserEntity } from '@modules/profile/entities/user.entity';
@@ -22,8 +24,10 @@ import {
   toGuardianResponse,
   toUserCard,
 } from './dto/guardian-response.dto';
+import { GuardianOnChainRegistrationDto } from './dto/guardian-on-chain-registration.dto';
 import { GuardianEntity } from './entities/guardian.entity';
 import { GuardianRepository } from './repositories/guardian.repository';
+import { resolveRequiredApprovals } from '@modules/recovery/dto/recovery-response.dto';
 
 @Injectable()
 export class GuardianService {
@@ -33,6 +37,7 @@ export class GuardianService {
     private readonly walletService: WalletService,
     private readonly notificationService: NotificationService,
     private readonly sendgridService: SendgridService,
+    private readonly safeService: SafeService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -159,20 +164,83 @@ export class GuardianService {
     const guardian = await this.requireIncomingInvite(callerId, id);
     const inviteeWallet = await this.walletService.findByUserId(callerId);
 
+    if (!inviteeWallet?.ownerAddress) {
+      throw new ConflictException(
+        'Provision your Turnkey smart account before accepting a guardian invitation',
+      );
+    }
+
     guardian.status = GuardianStatus.ACTIVE;
     guardian.verifiedAt = new Date();
-    if (inviteeWallet?.ownerAddress) {
-      guardian.guardianAddress = inviteeWallet.ownerAddress;
-    }
+    guardian.guardianAddress = inviteeWallet.ownerAddress;
 
     const saved = await this.guardianRepository.save(guardian);
     await this.notifyOwner(
       guardian,
       'Guardian invitation accepted',
-      `${guardian.guardianName ?? guardian.guardianEmail} accepted your guardian invitation.`,
+      `${guardian.guardianName ?? guardian.guardianEmail} accepted your guardian invitation. ` +
+        'Register them on-chain via GET /guardian/:id/on-chain-registration.',
     );
 
     return toGuardianResponse(saved, inviteeWallet);
+  }
+
+  async getOnChainRegistration(
+    callerId: string,
+    id: string,
+  ): Promise<GuardianOnChainRegistrationDto> {
+    const guardian = await this.requireOwnedGuardian(callerId, id);
+    if (guardian.status !== GuardianStatus.ACTIVE) {
+      throw new ConflictException('Only an accepted guardian can be registered on-chain');
+    }
+    if (!guardian.guardianAddress) {
+      throw new ConflictException('Guardian has no signer address');
+    }
+
+    const wallet = await this.walletService.getByUserId(callerId);
+    if (!wallet.smartAccountAddress) {
+      throw new ConflictException('Smart account has not been provisioned yet');
+    }
+
+    const safeAddress = getAddress(wallet.smartAccountAddress);
+    const guardianAddress = getAddress(guardian.guardianAddress);
+    const active = await this.guardianRepository.findActiveApproversForWallet(wallet.id);
+    const threshold = resolveRequiredApprovals(active.length, wallet.guardianThreshold);
+
+    let moduleEnabled = false;
+    try {
+      moduleEnabled = await this.safeService.isRecoveryModuleEnabled(safeAddress);
+    } catch {
+      moduleEnabled = false;
+    }
+
+    const moduleAddress = this.safeService.getRecoveryModuleAddress();
+    const addGuardianData = this.safeService.buildAddGuardianCallData(guardianAddress, threshold);
+
+    const result = new GuardianOnChainRegistrationDto({
+      guardianId: guardian.id,
+      safeAddress,
+      guardianAddress,
+      recoveryModuleAddress: moduleAddress,
+      threshold,
+      moduleEnabled,
+      addGuardian: {
+        to: moduleAddress,
+        value: '0',
+        data: addGuardianData,
+      },
+    });
+
+    if (!moduleEnabled) {
+      const enableTx = await this.safeService.buildEnableRecoveryModuleTransaction(safeAddress);
+      result.enableModule = {
+        to: enableTx.to,
+        value: enableTx.value.toString(),
+        data: enableTx.data,
+      };
+    }
+
+    return result;
   }
 
   async decline(callerId: string, id: string): Promise<GuardianResponseDto> {

@@ -106,6 +106,12 @@ describe('GuardianService', () => {
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
     sendgridService = { sendGuardianInvitation: jest.fn().mockResolvedValue(undefined) };
     configService = { get: jest.fn().mockReturnValue({ corsOrigin: 'https://app.example' }) };
+    const safeService = {
+      getRecoveryModuleAddress: jest.fn().mockReturnValue('0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897'),
+      isRecoveryModuleEnabled: jest.fn().mockResolvedValue(true),
+      buildAddGuardianCallData: jest.fn().mockReturnValue('0xadd'),
+      buildEnableRecoveryModuleTransaction: jest.fn(),
+    };
 
     service = new GuardianService(
       guardianRepository as unknown as GuardianRepository,
@@ -113,6 +119,7 @@ describe('GuardianService', () => {
       walletService as never,
       notificationService as never,
       sendgridService as never,
+      safeService as never,
       configService as unknown as ConfigService,
     );
   });
@@ -291,14 +298,20 @@ describe('GuardianService', () => {
 
     it('accepts a pending invitation for the invitee', async () => {
       guardianRepository.findByIdWithRelations.mockResolvedValue({ ...invited });
-      walletService.findByUserId.mockResolvedValue({ ownerAddress: '0xabc' });
+      walletService.findByUserId.mockResolvedValue({
+        ownerAddress: '0xabc0000000000000000000000000000000000abc',
+        id: 'wallet-2',
+        userId: targetId,
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
+      });
 
       const result = await service.accept(targetId, 'g-1');
       expect(result.status).toBe('approved');
       expect(guardianRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           status: GuardianStatus.ACTIVE,
-          guardianAddress: '0xabc',
+          guardianAddress: '0xabc0000000000000000000000000000000000abc',
         }),
       );
     });

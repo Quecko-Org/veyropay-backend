@@ -21,6 +21,7 @@ import {
   CreateRecoveryRequestDto,
   LookupRecoveryByAddressDto,
   LookupRecoveryByEmailDto,
+  ApproveRecoveryDto,
 } from './dto';
 import { RecoveryService } from './recovery.service';
 
@@ -53,9 +54,11 @@ export class RecoveryController {
     default: { limit: RECOVERY_PUBLIC_THROTTLE_LIMIT, ttl: RECOVERY_PUBLIC_THROTTLE_TTL_MS },
   })
   @ApiOperation({
-    summary: 'Start guardian recovery with a new signer address',
+    summary: 'Start on-chain guardian recovery with a new Turnkey signer',
     description:
-      'Creates a pending recovery request and notifies active guardians via in-app notification.',
+      'Computes SocialRecoveryModule recoveryHash for guardians to EIP-712 sign. ' +
+      'Guardians must already be registered on-chain. Approvals require signatures; ' +
+      'threshold triggers relayer multiConfirmRecovery (DB alone cannot move the Safe).',
   })
   createRequest(@Body() dto: CreateRecoveryRequestDto) {
     return this.recoveryService.createRequest(dto);
@@ -65,7 +68,7 @@ export class RecoveryController {
   @Throttle({
     default: { limit: RECOVERY_PUBLIC_THROTTLE_LIMIT, ttl: RECOVERY_PUBLIC_THROTTLE_TTL_MS },
   })
-  @ApiOperation({ summary: 'Poll recovery request status and per-guardian approvals' })
+  @ApiOperation({ summary: 'Poll recovery request status, hash, and per-guardian approvals' })
   getRequest(@Param('id', ParseUUIDPipe) id: string) {
     return this.recoveryService.getRequest(id);
   }
@@ -81,9 +84,18 @@ export class RecoveryController {
   @Patch('approvals/:id/approve')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Approve a recovery request as a guardian' })
-  approve(@CurrentUser() user: IJwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.recoveryService.approve(user.sub, id);
+  @ApiOperation({
+    summary: 'Approve recovery with an on-chain guardian signature',
+    description:
+      'Body.signature must recover to this guardian\'s Turnkey EOA over recoveryHash. ' +
+      'When the threshold is met the backend relays multiConfirmRecovery.',
+  })
+  approve(
+    @CurrentUser() user: IJwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ApproveRecoveryDto,
+  ) {
+    return this.recoveryService.approve(user.sub, id, dto.signature);
   }
 
   @Patch('approvals/:id/decline')

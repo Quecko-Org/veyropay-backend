@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import ms from 'ms';
@@ -26,7 +26,11 @@ import { SignupResultDto } from './dto/signup-result.dto';
 import { OauthLoginDto } from './dto/oauth-login.dto';
 import { OauthLoginResultDto } from './dto/oauth-login-result.dto';
 import { DevLoginDto } from './dto/dev-login.dto';
-
+import { InitEmailRecoveryDto } from './dto/init-email-recovery.dto';
+import { InitEmailRecoveryResultDto } from './dto/init-email-recovery-result.dto';
+import { CompleteEmailRecoveryDto } from './dto/complete-email-recovery.dto';
+import { CompleteEmailRecoveryResultDto } from './dto/complete-email-recovery-result.dto';
+import { DEFAULT_EMAIL_RECOVERY_EXPIRATION_SECONDS } from './constants';
 export interface IRequestMetadata {
   ipAddress?: string;
 }
@@ -123,11 +127,77 @@ export class AuthService {
     return new OauthLoginResultDto({ sessionJwt: loginResult.session });
   }
 
+  // Lost-device / lost-passkey recovery via Turnkey email. Looks up the user's linked
+  // Turnkey sub-organization, then asks Turnkey to email a recovery credential encrypted
+  // to the client's ephemeral targetPublicKey. Does not issue an app session.
+  async initEmailRecovery(dto: InitEmailRecoveryDto): Promise<InitEmailRecoveryResultDto> {
+    const user = await this.profileService.findByEmail(dto.email);
+    if (!user) {
+      throw new NotFoundException('Unable to initiate recovery for this email');
+    }
+
+    const organizationId = await this.profileService.getProviderReference(
+      user.id,
+      TURNKEY_ORGANIZATION_PROVIDER_KEY,
+    );
+    if (!organizationId) {
+      throw new NotFoundException('Unable to initiate recovery for this email');
+    }
+
+    const app = this.configService.get<IAppConfig>('app') as IAppConfig;
+    const result = await this.turnkeyService.initEmailRecovery({
+      organizationId,
+      email: dto.email,
+      targetPublicKey: dto.targetPublicKey,
+      expirationSeconds: dto.expirationSeconds ?? DEFAULT_EMAIL_RECOVERY_EXPIRATION_SECONDS,
+      emailCustomization: { appName: app.name },
+    });
+
+    await this.systemService.recordAudit('email_recovery_init', user.id, { email: dto.email });
+
+    return new InitEmailRecoveryResultDto({
+      userId: result.userId,
+      organizationId,
+    });
+  }
+
+  // Relays the client-stamped recover_user activity. After success the client must
+  // stampLogin() with the new passkey and call POST /auth/login.
+  async completeEmailRecovery(
+    dto: CompleteEmailRecoveryDto,
+  ): Promise<CompleteEmailRecoveryResultDto> {
+    const result = await this.turnkeyService.completeRecovery({
+      organizationId: dto.organizationId,
+      userId: dto.userId,
+      timestampMs: dto.timestampMs,
+      authenticator: dto.authenticator,
+      stamp: dto.stamp,
+    });
+
+    const user = await this.profileService.findByTurnkeyUserId(result.userId);
+    if (user) {
+      await this.revokeAllSessions(user.id);
+      await this.systemService.recordAudit('email_recovery_complete', user.id, {
+        organizationId: dto.organizationId,
+      });
+    } else {
+      await this.systemService.recordAudit('email_recovery_complete', undefined, {
+        turnkeyUserId: result.userId,
+        organizationId: dto.organizationId,
+      });
+    }
+
+    return new CompleteEmailRecoveryResultDto({
+      userId: result.userId,
+      message:
+        'Recovery complete. Call Turnkey stampLogin() with the new passkey, then POST /auth/login.',
+    });
+  }
+
   // Unified session entry point: validates a Turnkey session JWT locally (signature +
   // expiry, no Turnkey API call) and issues our own app JWT. Fed by a session JWT
-  // obtained via passkey stampLogin(), POST /auth/oauth-login, or (in a future phase)
-  // OTP login - the backend doesn't care which method produced it. See
-  // docs.turnkey.com/authentication/backend-authentication ("Validating the JWT").
+  // obtained via passkey stampLogin(), POST /auth/oauth-login, or after email recovery.
+  // See docs.turnkey.com/authentication/backend-authentication ("Validating the JWT").
   async login(dto: LoginDto, meta: IRequestMetadata): Promise<AuthTokensDto> {
     const identity = await this.turnkeyService.verifySessionToken(dto.sessionJwt);
 
@@ -237,6 +307,11 @@ export class AuthService {
         .filter((session) => session.id !== exceptSessionId)
         .map((session) => this.deviceSessionRepository.revoke(session.id)),
     );
+  }
+
+  async revokeAllSessions(userId: string): Promise<void> {
+    const sessions = await this.deviceSessionRepository.findAllForUser(userId);
+    await Promise.all(sessions.map((session) => this.deviceSessionRepository.revoke(session.id)));
   }
 
   private async createDeviceSession(

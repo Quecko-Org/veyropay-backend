@@ -1,0 +1,154 @@
+name: Deploy to staging branch
+
+on:
+  push:
+    branches: [staging]
+
+jobs:
+  deploy:
+    name: Deploying to Staging Server
+    runs-on: [self-hosted, veyropay-be-main]
+    environment: staging
+
+    env:
+      IMAGE_NAME: veyropay-be-staging
+      CONTAINER_NAME: veyropay-be-staging
+
+    steps:
+      # =========================
+      # 1. Checkout repository
+      #    Isolate from production checkout/env on the shared self-hosted runner.
+      # =========================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: staging
+          clean: false
+
+      # =========================
+      # 2. Build NEW image (reuse layer cache; no BuildKit/buildx required)
+      # =========================
+      - name: Build new image
+        working-directory: staging
+        env:
+          DOCKER_BUILDKIT: "0"
+        run: |
+          docker build -t $IMAGE_NAME:new .
+
+      # =========================
+      # 3. Apply pending database migrations
+      #    Runs against the staging DB/network before the new container takes
+      #    traffic. A failure leaves the current container up.
+      # =========================
+      - name: Run database migrations
+        working-directory: staging
+        run: |
+          docker run --rm \
+            --network veyropay-net \
+            --env-file .env \
+            $IMAGE_NAME:new \
+            npm run migration:run:prod
+
+      # =========================
+      # 4. Cleanup old candidate (prevent conflicts)
+      # =========================
+      - name: Cleanup old candidate container
+        run: |
+          docker rm -f ${CONTAINER_NAME}-candidate || true
+
+      # =========================
+      # 5. Start candidate container (NO traffic exposure)
+      # =========================
+      - name: Start candidate container
+        working-directory: staging
+        run: |
+          docker run -d \
+            --name ${CONTAINER_NAME}-candidate \
+            --network veyropay-net \
+            --env-file .env \
+            $IMAGE_NAME:new
+
+      # =========================
+      # 6. Wait for healthcheck
+      # =========================
+      - name: Wait for healthcheck
+        run: |
+          echo "Waiting for candidate container to become healthy..."
+          for i in {1..25}; do
+            STATUS=$(docker inspect \
+              --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' \
+              ${CONTAINER_NAME}-candidate)
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Candidate is healthy :white_check_mark:"
+              exit 0
+            fi
+            if [ "$STATUS" = "unhealthy" ]; then
+              echo "Candidate became unhealthy :x:"
+              docker logs ${CONTAINER_NAME}-candidate --tail 50 || true
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Healthcheck timeout :x:"
+          docker logs ${CONTAINER_NAME}-candidate --tail 50 || true
+          exit 1
+
+      # =========================
+      # 7. Promote candidate → staging
+      # =========================
+      - name: Switch to new version
+        if: success()
+        run: |
+          echo "Switching staging container..."
+          # Stop old container
+          docker stop $CONTAINER_NAME || true
+          docker rm $CONTAINER_NAME || true
+
+          # Start new container (staging)
+          docker run -d \
+            --name $CONTAINER_NAME \
+            --network veyropay-net \
+            --env-file staging/.env \
+            -p 4007:4006 \
+            $IMAGE_NAME:new
+
+          # Remove candidate
+          docker rm -f ${CONTAINER_NAME}-candidate || true
+
+      # =========================
+      # 8. Cleanup on failure
+      # =========================
+      - name: Cleanup failed candidate
+        if: failure()
+        run: |
+          echo "Deployment failed - cleaning candidate container..."
+          docker rm -f ${CONTAINER_NAME}-candidate || true
+
+      # =========================
+      # 9. Verify running containers
+      # =========================
+      - name: Verify running containers
+        run: |
+          docker ps
+
+      # =========================
+      # 10. Show logs
+      # =========================
+      - name: Show logs
+        run: |
+          docker logs $CONTAINER_NAME --tail 50 || true
+
+      # =========================
+      # 11. Cleanup old images
+      # =========================
+      - name: Cleanup old images
+        run: |
+          echo "Cleaning old images for $IMAGE_NAME..."
+          IMAGES=$(docker images "$IMAGE_NAME" --format "{{.ID}}")
+          COUNT=$(echo "$IMAGES" | wc -l)
+          if [ "$COUNT" -gt 1 ]; then
+            echo "$IMAGES" | tail -n +2 | xargs -r docker rmi -f
+          else
+            echo "No old images to clean."
+          fi

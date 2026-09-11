@@ -25,7 +25,7 @@ describe('RecoveryService', () => {
 
   const guardianUser = {
     id: guardianUserId,
-    email: 'mark@example.com',
+    email: 'mark1@example.com',
     displayName: 'Mark de Vries',
     status: UserStatus.ACTIVE,
   };

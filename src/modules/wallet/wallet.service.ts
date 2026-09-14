@@ -238,12 +238,17 @@ export class WalletService {
     }
 
     const callGasLimit = sponsorship?.callGasLimit ?? gasEstimate.callGasLimit;
+    // When Pimlico sponsors, paymasterData is bound to the exact gas limits from
+    // pm_sponsorUserOperation. Bumping verificationGasLimit after that invalidates
+    // the paymaster signature and breaks execution. Only apply a buffer on the
+    // unsponsored fallback path.
     const rawVerificationGasLimit = BigInt(
       sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit,
     );
-    const verificationGasLimit = `0x${((rawVerificationGasLimit * 120n) / 100n).toString(16)}`;
+    const verificationGasLimit = sponsorship
+      ? `0x${rawVerificationGasLimit.toString(16)}`
+      : `0x${((rawVerificationGasLimit * 120n) / 100n).toString(16)}`;
 
-  
     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
 
     if (!sponsorship) {

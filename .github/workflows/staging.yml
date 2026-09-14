@@ -104,7 +104,7 @@ jobs:
             --name $CONTAINER_NAME \
             --network veyropay-net \
             --env-file staging/.env \
-            -p 4007:4012 \
+            -p 4012:4012 \
             $IMAGE_NAME:new
           # Remove candidate
           docker rm -f ${CONTAINER_NAME}-candidate || true

@@ -42,8 +42,7 @@ export class GuardianOnChainRegistrationDto {
 
   @ApiProperty({
     type: GuardianCallDataDto,
-    description:
-      'Call SocialRecoveryModule.addGuardianWithThreshold via Safe UserOp (to = module)',
+    description: 'Call SocialRecoveryModule.addGuardianWithThreshold via Safe UserOp (to = module)',
   })
   addGuardian!: GuardianCallDataDto;
 

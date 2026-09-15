@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { decodeFunctionResult, encodeFunctionData } from 'viem';
 import { ISafeConfig } from '@core/config/safe.config';
 import { ProviderHttpError } from '@common/utils';
+import { IEthBlock, IEthLog } from './types';
 
 const ERC20_BALANCE_OF_ABI = [
   {
@@ -108,6 +109,27 @@ export class ChainRpcClient {
 
   async chainId(): Promise<string> {
     return this.rpcCall<string>('eth_chainId', []);
+  }
+  async getBlockNumber(): Promise<string> {
+    return this.rpcCall<string>('eth_blockNumber', []);
+  }
+
+  async getLogs(params: {
+    fromBlock: string;
+    toBlock: string;
+    topics: (string | string[] | null)[];
+  }): Promise<IEthLog[]> {
+    return this.rpcCall<IEthLog[]>('eth_getLogs', [params]);
+  }
+
+  async getBlockByNumber(
+    blockNumber: string,
+    includeTransactions: boolean,
+  ): Promise<IEthBlock | null> {
+    return this.rpcCall<IEthBlock | null>('eth_getBlockByNumber', [
+      blockNumber,
+      includeTransactions,
+    ]);
   }
 
   private async rpcCall<T>(method: string, params: unknown[]): Promise<T> {

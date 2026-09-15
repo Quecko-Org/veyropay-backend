@@ -11,4 +11,8 @@ export interface IRecordTransaction {
   txHash?: string;
   providerReference?: string;
   toAddress?: string;
+  fromAddress?: string;
+  fromChain?: string;
+  fromAsset?: string;
+  receivedAmount?: string;
 }

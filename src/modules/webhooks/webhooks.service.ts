@@ -1,12 +1,13 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { KycStatus, WebhookProvider, WebhookStatus } from '@shared/enums';
+import { KycStatus,WebhookProvider, WebhookStatus } from '@shared/enums';
 import { IRainConfig } from '@core/config/rain.config';
 import { IBaanxConfig } from '@core/config/baanx.config';
 import { IProviderConfig } from '@shared/interfaces';
 import { KycService } from '@modules/kyc/kyc.service';
 import { CardService } from '@modules/card/card.service';
+// import { mapSumsubReviewAnswer } from '@integrations/sumsub/sumsub.util';
 import { WebhookEventRepository } from './repositories/webhook-event.repository';
 
 interface ISumsubWebhookPayload {
@@ -46,10 +47,10 @@ export class WebhooksService {
       payload as unknown as Record<string, unknown>,
     );
 
-    const status = this.mapSumsubReviewAnswer(payload.reviewResult?.reviewAnswer);
-    if (status) {
-      await this.kycService.handleStatusUpdate(payload.applicantId, status);
-    }
+    // const status = mapSumsubReviewAnswer(payload.reviewResult?.reviewAnswer);
+    // if (status) {
+    //   await this.kycService.handleStatusUpdate(payload.applicantId, status);
+    // }
   }
 
   async handleRain(rawBody: Buffer, signature: string | undefined): Promise<void> {
@@ -86,8 +87,7 @@ export class WebhooksService {
       settlementCurrency: payload.settlementCurrency,
       providerReference: payload.id,
     });
-  }
-
+  }  
   private mapSumsubReviewAnswer(answer: 'GREEN' | 'RED' | undefined): KycStatus | null {
     if (answer === 'GREEN') return KycStatus.APPROVED;
     if (answer === 'RED') return KycStatus.REJECTED;

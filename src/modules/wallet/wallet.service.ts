@@ -21,6 +21,7 @@ import { PreparedUserOperationDto } from './dto/prepared-user-operation.dto';
 import { BASE_CHAIN_ID } from './constants';
 // import line, near the top:
 import { ListTransactionsQueryDto } from '@modules/transaction/dto/list-transactions-query.dto';
+import { IsNull, Not } from 'typeorm';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * ONE_DAY_MS;
 
@@ -116,6 +117,12 @@ export class WalletService {
     wallet.status = WalletStatus.ACTIVE;
 
     return this.walletRepository.save(wallet);
+  }
+
+  // Used by the deposit block-scanner - every wallet with an assigned Safe address,
+  // regardless of status, since even a brand-new wallet can still receive a transfer.
+  async listProvisioned(): Promise<WalletEntity[]> {
+    return this.walletRepository.findMany({ where: { smartAccountAddress: Not(IsNull()) } });
   }
 
   async prepareUserOperation(
@@ -228,7 +235,7 @@ export class WalletService {
         // discovered earlier, during simulation instead of a separate balance query.
         throw new ConflictException(
           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
-            'wallet does not have enough balance to cover this transaction.',
+          'wallet does not have enough balance to cover this transaction.',
         );
       }
     }
@@ -239,7 +246,7 @@ export class WalletService {
     );
     const verificationGasLimit = `0x${((rawVerificationGasLimit * 120n) / 100n).toString(16)}`;
 
-  
+
     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
 
     if (!sponsorship) {
@@ -255,7 +262,7 @@ export class WalletService {
       if (balance < estimatedCost) {
         throw new ConflictException(
           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
-            'wallet does not have enough balance to cover this transaction.',
+          'wallet does not have enough balance to cover this transaction.',
         );
       }
     } else {
@@ -289,11 +296,11 @@ export class WalletService {
       maxPriorityFeePerGas: gasPrice.maxPriorityFeePerGas,
       ...(sponsorship
         ? {
-            paymaster: sponsorship.paymaster,
-            paymasterData: sponsorship.paymasterData,
-            paymasterVerificationGasLimit: sponsorship.paymasterVerificationGasLimit,
-            paymasterPostOpGasLimit: sponsorship.paymasterPostOpGasLimit,
-          }
+          paymaster: sponsorship.paymaster,
+          paymasterData: sponsorship.paymasterData,
+          paymasterVerificationGasLimit: sponsorship.paymasterVerificationGasLimit,
+          paymasterPostOpGasLimit: sponsorship.paymasterPostOpGasLimit,
+        }
         : {}),
     });
   }
@@ -305,7 +312,7 @@ export class WalletService {
     if (!dto.tokenAddress) {
       const amount = BigInt(dto.value ?? '0');
       const balance = await this.pimlicoService.getNativeBalance(sender);
-console.log("asharamount balance",amount ,balance)
+      console.log("asharamount balance", amount, balance)
       if (balance < amount) {
         throw new ConflictException('Insufficient balance for transfer');
       }
@@ -524,7 +531,7 @@ console.log("asharamount balance",amount ,balance)
       throw new ConflictException(
         `threshold must be between 1 and the active guardian count (${activeGuardianCount})`,
       );
-    } 
+    }
 
     wallet.guardianThreshold = threshold;
     return this.walletRepository.save(wallet);

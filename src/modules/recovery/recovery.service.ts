@@ -157,10 +157,15 @@ export class RecoveryService {
     const expiresAt = new Date();
     expiresAt.setUTCDate(expiresAt.getUTCDate() + RECOVERY_REQUEST_TTL_DAYS);
 
+    const requestedByEmail = (dto.requestedByEmail ?? owner.email)?.trim().toLowerCase();
+    if (!requestedByEmail) {
+      throw new ConflictException('Unable to resolve requester email for this wallet');
+    }
+
     const request = await this.recoveryRequestRepository.save(
       this.recoveryRequestRepository.create({
         walletId: wallet.id,
-        requestedByEmail: dto.requestedByEmail.trim().toLowerCase(),
+        requestedByEmail,
         newOwnerAddress,
         requiredApprovals,
         status: RecoveryRequestStatus.PENDING,
@@ -188,6 +193,18 @@ export class RecoveryService {
     request.wallet = wallet;
     request.approvals = approvals;
     return toRecoveryRequestDto(request, this.typedDataFor(request, wallet));
+  }
+
+  async listRequests(
+    walletId: string,
+    status?: RecoveryRequestStatus,
+  ): Promise<RecoveryRequestDto[]> {
+    await this.walletService.getById(walletId);
+    const rows = await this.recoveryRequestRepository.findByWalletIdWithRelations(
+      walletId,
+      status,
+    );
+    return rows.map((row) => toRecoveryRequestDto(row, this.typedDataFor(row, row.wallet)));
   }
 
   async getRequest(id: string): Promise<RecoveryRequestDto> {

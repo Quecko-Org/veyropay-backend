@@ -67,6 +67,7 @@ describe('GuardianService', () => {
     findOutgoingForWallet: jest.Mock;
     findIncomingForUser: jest.Mock;
     findByIdWithRelations: jest.Mock;
+    findActiveApproversForWallet: jest.Mock;
   };
   let profileService: {
     getById: jest.Mock;
@@ -81,6 +82,14 @@ describe('GuardianService', () => {
   let notificationService: { notify: jest.Mock };
   let sendgridService: { sendGuardianInvitation: jest.Mock };
   let configService: { get: jest.Mock };
+  let safeService: {
+    getRecoveryModuleAddress: jest.Mock;
+    isRecoveryModuleEnabled: jest.Mock;
+    buildAddGuardianCallData: jest.Mock;
+    buildEnableRecoveryModuleTransaction: jest.Mock;
+    getGuardiansCount: jest.Mock;
+    isRecoveryGuardian: jest.Mock;
+  };
 
   beforeEach(() => {
     guardianRepository = {
@@ -92,6 +101,7 @@ describe('GuardianService', () => {
       findOutgoingForWallet: jest.fn(),
       findIncomingForUser: jest.fn(),
       findByIdWithRelations: jest.fn(),
+      findActiveApproversForWallet: jest.fn().mockResolvedValue([{}, {}]),
     };
     profileService = {
       getById: jest.fn((id: string) => Promise.resolve(id === callerId ? caller : target)),
@@ -106,11 +116,13 @@ describe('GuardianService', () => {
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
     sendgridService = { sendGuardianInvitation: jest.fn().mockResolvedValue(undefined) };
     configService = { get: jest.fn().mockReturnValue({ corsOrigin: 'https://app.example' }) };
-    const safeService = {
+    safeService = {
       getRecoveryModuleAddress: jest.fn().mockReturnValue('0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897'),
       isRecoveryModuleEnabled: jest.fn().mockResolvedValue(true),
       buildAddGuardianCallData: jest.fn().mockReturnValue('0xadd'),
       buildEnableRecoveryModuleTransaction: jest.fn(),
+      getGuardiansCount: jest.fn().mockResolvedValue(0),
+      isRecoveryGuardian: jest.fn().mockResolvedValue(false),
     };
 
     service = new GuardianService(
@@ -331,6 +343,68 @@ describe('GuardianService', () => {
         status: GuardianStatus.ACTIVE,
       });
       await expect(service.decline(targetId, 'g-1')).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('getOnChainRegistration', () => {
+    const activeGuardian: GuardianEntity = {
+      id: '122ee025-71a9-46c0-8f85-ccc07f5ebcb2',
+      walletId,
+      guardianEmail: target.email,
+      guardianName: target.displayName,
+      guardianUserId: targetId,
+      guardianAddress: '0xBFe7b7914208F476FF90AE74bDc5bae009A4F28A',
+      status: GuardianStatus.ACTIVE,
+      canApproveRecovery: true,
+      canMoveFunds: false,
+      canSeeBalance: false,
+      canBeRemoved: true,
+      invitationToken: 'token',
+      invitedAt: new Date(),
+      wallet: { id: walletId, userId: callerId, user: caller } as GuardianEntity['wallet'],
+    } as GuardianEntity;
+
+    beforeEach(() => {
+      guardianRepository.findByIdWithRelations.mockResolvedValue(activeGuardian);
+      walletService.getByUserId.mockResolvedValue({
+        ...wallet,
+        smartAccountAddress: '0x07553c8381351B6b55898e2D9922c2813135C9Ef',
+        guardianThreshold: 2,
+      });
+    });
+
+    it('clamps addGuardian threshold to on-chain count + 1', async () => {
+      safeService.getGuardiansCount.mockResolvedValue(0);
+
+      const result = await service.getOnChainRegistration(callerId, activeGuardian.id);
+
+      expect(safeService.buildAddGuardianCallData).toHaveBeenCalledWith(
+        '0xBFe7b7914208F476FF90AE74bDc5bae009A4F28A',
+        1,
+      );
+      expect(result.threshold).toBe(1);
+      expect(result.moduleEnabled).toBe(true);
+      expect(result.enableModule).toBeUndefined();
+    });
+
+    it('allows desired threshold once on-chain count supports it', async () => {
+      safeService.getGuardiansCount.mockResolvedValue(1);
+
+      const result = await service.getOnChainRegistration(callerId, activeGuardian.id);
+
+      expect(safeService.buildAddGuardianCallData).toHaveBeenCalledWith(
+        '0xBFe7b7914208F476FF90AE74bDc5bae009A4F28A',
+        2,
+      );
+      expect(result.threshold).toBe(2);
+    });
+
+    it('conflicts when the guardian is already on-chain', async () => {
+      safeService.isRecoveryGuardian.mockResolvedValue(true);
+
+      await expect(
+        service.getOnChainRegistration(callerId, activeGuardian.id),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

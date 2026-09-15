@@ -87,6 +87,7 @@ describe('RecoveryService', () => {
     create: jest.Mock;
     save: jest.Mock;
     findByIdWithRelations: jest.Mock;
+    findByWalletIdWithRelations: jest.Mock;
   };
   let recoveryApprovalRepository: {
     create: jest.Mock;
@@ -119,6 +120,7 @@ describe('RecoveryService', () => {
       create: jest.fn((data: Record<string, unknown>) => ({ id: 'rec-1', ...data })),
       save: jest.fn((entity: Record<string, unknown>) => Promise.resolve(entity)),
       findByIdWithRelations: jest.fn(),
+      findByWalletIdWithRelations: jest.fn().mockResolvedValue([]),
     };
     recoveryApprovalRepository = {
       create: jest.fn((data: Record<string, unknown>) => ({
@@ -223,6 +225,60 @@ describe('RecoveryService', () => {
     it('rejects duplicate pending recovery', async () => {
       recoveryRequestRepository.findPendingByWalletId.mockResolvedValue({ id: 'existing' });
       await expect(service.createRequest(dto)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('defaults requestedByEmail to the wallet owner email when omitted', async () => {
+      await service.createRequest({
+        walletId,
+        newOwnerAddress: dto.newOwnerAddress,
+      });
+
+      expect(recoveryRequestRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ requestedByEmail: owner.email }),
+      );
+    });
+  });
+
+  describe('listRequests', () => {
+    it('returns requests with per-guardian approval status', async () => {
+      recoveryRequestRepository.findByWalletIdWithRelations.mockResolvedValue([
+        {
+          id: 'rec-1',
+          walletId,
+          wallet,
+          newOwnerAddress: '0x7ac800000000000000000000000000000000894e',
+          requiredApprovals: 2,
+          status: RecoveryRequestStatus.PENDING,
+          recoveryHash,
+          recoveryNonce: '0',
+          createdAt: new Date(),
+          approvals: [
+            {
+              id: 'apr-1',
+              guardianId: 'g-1',
+              status: RecoveryApprovalStatus.APPROVED,
+              guardian: guardians[0],
+              decidedAt: new Date(),
+            },
+            {
+              id: 'apr-2',
+              guardianId: 'g-2',
+              status: RecoveryApprovalStatus.PENDING,
+              guardian: guardians[1],
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.listRequests(walletId);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].approvalsCount).toBe(1);
+      expect(result[0].approvals.map((row) => row.status)).toEqual([
+        RecoveryApprovalStatus.APPROVED,
+        RecoveryApprovalStatus.PENDING,
+      ]);
+      expect(result[0].approvals[0].guardianName).toBe('Mark de Vries');
     });
   });
 

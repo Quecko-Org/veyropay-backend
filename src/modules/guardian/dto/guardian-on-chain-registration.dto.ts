@@ -28,7 +28,10 @@ export class GuardianOnChainRegistrationDto {
   @ApiProperty()
   recoveryModuleAddress!: string;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Threshold encoded into addGuardian (clamped so threshold <= on-chain guardians after add)',
+  })
   threshold!: number;
 
   @ApiProperty()

@@ -1,17 +1,20 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Safe from '@safe-global/protocol-kit';
-import { Address, Hex } from 'viem';
+import { Address, decodeFunctionResult, Hex } from 'viem';
 import { ProviderException } from '@common/exceptions';
 import { ISafeConfig } from '@core/config/safe.config';
+import { ChainRpcClient } from '@integrations/chain-rpc/chain-rpc.client';
 import { SafeClient } from './safe.client';
 import { ISafeCreationInfo, ISafeInfo } from './types';
 import { SAFE_PROVIDER_NAME } from './constants';
 import { buildEnableModulesSetupCallData } from './safe-account.util';
+import { SOCIAL_RECOVERY_MODULE_ABI } from './social-recovery-module.constant';
 import {
   buildAddGuardianWithThresholdCallData,
   buildChangeThresholdCallData,
   buildGetRecoveryHashCallData,
+  buildGuardiansCountCallData,
   buildIsGuardianCallData,
   buildMultiConfirmRecoveryCallData,
   buildRecoveryNonceCallData,
@@ -52,6 +55,7 @@ export class SafeService {
 
   constructor(
     private readonly client: SafeClient,
+    private readonly chainRpcClient: ChainRpcClient,
     configService: ConfigService,
   ) {
     this.config = configService.get<ISafeConfig>('safe') as ISafeConfig;
@@ -202,6 +206,45 @@ export class SafeService {
 
   buildIsGuardianCallData(walletAddress: Address, guardianAddress: Address): Hex {
     return buildIsGuardianCallData(walletAddress, guardianAddress);
+  }
+
+  buildGuardiansCountCallData(walletAddress: Address): Hex {
+    return buildGuardiansCountCallData(walletAddress);
+  }
+
+  async getGuardiansCount(safeAddress: Address): Promise<number> {
+    try {
+      const result = await this.chainRpcClient.ethCall(
+        this.config.recoveryModuleAddress,
+        buildGuardiansCountCallData(safeAddress),
+      );
+      const count = decodeFunctionResult({
+        abi: SOCIAL_RECOVERY_MODULE_ABI,
+        functionName: 'guardiansCount',
+        data: result as Hex,
+      });
+      return Number(count);
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Recovery module guardiansCount lookup failed');
+      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to read on-chain guardian count');
+    }
+  }
+
+  async isRecoveryGuardian(safeAddress: Address, guardianAddress: Address): Promise<boolean> {
+    try {
+      const result = await this.chainRpcClient.ethCall(
+        this.config.recoveryModuleAddress,
+        buildIsGuardianCallData(safeAddress, guardianAddress),
+      );
+      return decodeFunctionResult({
+        abi: SOCIAL_RECOVERY_MODULE_ABI,
+        functionName: 'isGuardian',
+        data: result as Hex,
+      });
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Recovery module isGuardian lookup failed');
+      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to check on-chain guardian status');
+    }
   }
 
   async getSafeInfo(safeAddress: string): Promise<ISafeInfo> {

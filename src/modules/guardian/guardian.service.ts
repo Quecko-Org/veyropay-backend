@@ -28,6 +28,7 @@ import { GuardianOnChainRegistrationDto } from './dto/guardian-on-chain-registra
 import { GuardianEntity } from './entities/guardian.entity';
 import { GuardianRepository } from './repositories/guardian.repository';
 import { resolveRequiredApprovals } from '@modules/recovery/dto/recovery-response.dto';
+import { resolveAddGuardianThreshold } from '@integrations/safe/social-recovery.util';
 
 @Injectable()
 export class GuardianService {
@@ -205,7 +206,7 @@ export class GuardianService {
     const safeAddress = getAddress(wallet.smartAccountAddress);
     const guardianAddress = getAddress(guardian.guardianAddress);
     const active = await this.guardianRepository.findActiveApproversForWallet(wallet.id);
-    const threshold = resolveRequiredApprovals(active.length, wallet.guardianThreshold);
+    const desiredThreshold = resolveRequiredApprovals(active.length, wallet.guardianThreshold);
 
     let moduleEnabled = false;
     try {
@@ -213,6 +214,17 @@ export class GuardianService {
     } catch {
       moduleEnabled = false;
     }
+
+    // Module requires threshold <= count after add. Use on-chain count (not DB) so the
+    // first registration cannot encode threshold 2 while guardiansCount is still 0.
+    let onChainGuardiansCount = 0;
+    if (moduleEnabled) {
+      onChainGuardiansCount = await this.safeService.getGuardiansCount(safeAddress);
+      if (await this.safeService.isRecoveryGuardian(safeAddress, guardianAddress)) {
+        throw new ConflictException('Guardian is already registered on-chain');
+      }
+    }
+    const threshold = resolveAddGuardianThreshold(desiredThreshold, onChainGuardiansCount);
 
     const moduleAddress = this.safeService.getRecoveryModuleAddress();
     const addGuardianData = this.safeService.buildAddGuardianCallData(guardianAddress, threshold);

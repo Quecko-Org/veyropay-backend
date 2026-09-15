@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsEthereumAddress, IsNotEmpty, IsUUID } from 'class-validator';
+import { IsEmail, IsEthereumAddress, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateRecoveryRequestDto {
   @ApiProperty({ description: 'Wallet id from recovery lookup' })
@@ -16,11 +16,18 @@ export class CreateRecoveryRequestDto {
   @IsNotEmpty()
   newOwnerAddress!: string;
 
-  @ApiProperty({ example: 'owner@example.com' })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
-  )
+  @ApiPropertyOptional({
+    example: 'owner@example.com',
+    description: 'Defaults to the wallet owner email from lookup when omitted',
+  })
+  @Transform(({ value }: { value: unknown }) => {
+    if (typeof value !== 'string') {
+      return value;
+    }
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.length > 0 ? trimmed : undefined;
+  })
+  @IsOptional()
   @IsEmail()
-  @IsNotEmpty()
-  requestedByEmail!: string;
+  requestedByEmail?: string;
 }

@@ -19,6 +19,20 @@ export class RecoveryRequestRepository extends BaseRepository<RecoveryRequestEnt
     });
   }
 
+  findByWalletIdWithRelations(
+    walletId: string,
+    status?: RecoveryRequestStatus,
+  ): Promise<RecoveryRequestEntity[]> {
+    return this.repository.find({
+      where: status ? { walletId, status } : { walletId },
+      relations: {
+        wallet: { user: true },
+        approvals: { guardian: { guardianUser: true } },
+      },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   findByIdWithRelations(id: string): Promise<RecoveryRequestEntity | null> {
     return this.repository.findOne({
       where: { id },

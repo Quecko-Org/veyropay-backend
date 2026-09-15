@@ -22,6 +22,7 @@ import {
   LookupRecoveryByAddressDto,
   LookupRecoveryByEmailDto,
   ApproveRecoveryDto,
+  ListRecoveryRequestsDto,
 } from './dto';
 import { RecoveryService } from './recovery.service';
 
@@ -62,6 +63,20 @@ export class RecoveryController {
   })
   createRequest(@Body() dto: CreateRecoveryRequestDto) {
     return this.recoveryService.createRequest(dto);
+  }
+
+  @Get('requests')
+  @Throttle({
+    default: { limit: RECOVERY_PUBLIC_THROTTLE_LIMIT, ttl: RECOVERY_PUBLIC_THROTTLE_TTL_MS },
+  })
+  @ApiOperation({
+    summary: 'List recovery requests for a wallet with per-guardian approval status',
+    description:
+      'Use walletId from lookup. Each item includes approvals[] (guardianName + status: ' +
+      'pending / approved / rejected) so you can see who has approved.',
+  })
+  listRequests(@Query() query: ListRecoveryRequestsDto) {
+    return this.recoveryService.listRequests(query.walletId, query.status);
   }
 
   @Get('requests/:id')

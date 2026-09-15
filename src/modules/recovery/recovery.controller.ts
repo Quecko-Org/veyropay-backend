@@ -9,19 +9,24 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { Request } from 'express';
 import { JwtAuthGuard } from '@common/guards';
 import { CurrentUser } from '@common/decorators';
 import { IJwtPayload } from '@shared/interfaces';
+import { AuthTokensDto } from '@modules/auth/dto/auth-tokens.dto';
 import { RECOVERY_PUBLIC_THROTTLE_LIMIT, RECOVERY_PUBLIC_THROTTLE_TTL_MS } from './constants';
 import {
   CreateRecoveryRequestDto,
   LookupRecoveryByAddressDto,
   LookupRecoveryByEmailDto,
   ApproveRecoveryDto,
+  CancelRecoveryDto,
+  ClaimRecoveryDto,
   ListRecoveryRequestsDto,
 } from './dto';
 import { RecoveryService } from './recovery.service';
@@ -59,7 +64,8 @@ export class RecoveryController {
     description:
       'Computes SocialRecoveryModule recoveryHash for guardians to EIP-712 sign. ' +
       'Guardians must already be registered on-chain. Approvals require signatures; ' +
-      'threshold triggers relayer multiConfirmRecovery (DB alone cannot move the Safe).',
+      'threshold triggers relayer multiConfirmRecovery (DB alone cannot move the Safe). ' +
+      'Only one pending or approved (not yet executed) request is allowed per wallet.',
   })
   createRequest(@Body() dto: CreateRecoveryRequestDto) {
     return this.recoveryService.createRequest(dto);
@@ -86,6 +92,56 @@ export class RecoveryController {
   @ApiOperation({ summary: 'Poll recovery request status, hash, and per-guardian approvals' })
   getRequest(@Param('id', ParseUUIDPipe) id: string) {
     return this.recoveryService.getRequest(id);
+  }
+
+  @Post('requests/:id/execute')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: RECOVERY_PUBLIC_THROTTLE_LIMIT, ttl: RECOVERY_PUBLIC_THROTTLE_TTL_MS },
+  })
+  @ApiOperation({
+    summary: 'Retry on-chain multiConfirmRecovery for an approved request',
+    description:
+      'Use when status is approved but executionTxHash is null (relayer failed). ' +
+      'Idempotent if already executed.',
+  })
+  retryExecute(@Param('id', ParseUUIDPipe) id: string) {
+    return this.recoveryService.retryExecute(id);
+  }
+
+  @Post('requests/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: RECOVERY_PUBLIC_THROTTLE_LIMIT, ttl: RECOVERY_PUBLIC_THROTTLE_TTL_MS },
+  })
+  @ApiOperation({
+    summary: 'Cancel a pending or stuck approved recovery',
+    description:
+      'Email must match requester or wallet owner. Required before starting a new recovery ' +
+      'while another is pending/approved.',
+  })
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelRecoveryDto) {
+    return this.recoveryService.cancel(id, dto);
+  }
+
+  @Post('requests/:id/claim')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: RECOVERY_PUBLIC_THROTTLE_LIMIT, ttl: RECOVERY_PUBLIC_THROTTLE_TTL_MS },
+  })
+  @ApiOperation({
+    summary: 'Open the recovered wallet after on-chain execute',
+    description:
+      'Pass the Turnkey sessionJwt from stampLogin() with the new recovery passkey. ' +
+      'Verifies the session controls newOwnerAddress and that the Safe owner changed on-chain, ' +
+      'rebinds the wallet owner identity, and returns app JWTs. Then call GET /wallet.',
+  })
+  claim(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ClaimRecoveryDto,
+    @Req() req: Request,
+  ): Promise<AuthTokensDto> {
+    return this.recoveryService.claim(id, dto, { ipAddress: req.ip });
   }
 
   @Get('incoming')

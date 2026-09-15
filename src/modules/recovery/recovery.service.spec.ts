@@ -21,6 +21,7 @@ describe('RecoveryService', () => {
     email: 'owner@example.com',
     displayName: 'Alex Won',
     status: UserStatus.ACTIVE,
+    turnkeyUserId: 'tk-owner-old',
   };
 
   const guardianUser = {
@@ -43,6 +44,7 @@ describe('RecoveryService', () => {
   const guardianKey = generatePrivateKey();
   const guardianAccount = privateKeyToAccount(guardianKey);
   const recoveryHash = keccak256(toHex('recovery-test'));
+  const newOwnerAddress = '0x7Ac800000000000000000000000000000000894e';
 
   const guardians = [
     {
@@ -84,6 +86,8 @@ describe('RecoveryService', () => {
   let service: RecoveryService;
   let recoveryRequestRepository: {
     findPendingByWalletId: jest.Mock;
+    findActiveByWalletId: jest.Mock;
+    findActiveOthersByWalletId: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
     findByIdWithRelations: jest.Mock;
@@ -102,7 +106,12 @@ describe('RecoveryService', () => {
     getById: jest.Mock;
     save: jest.Mock;
   };
-  let profileService: { findByEmail: jest.Mock; getById: jest.Mock };
+  let profileService: {
+    findByEmail: jest.Mock;
+    getById: jest.Mock;
+    rebindTurnkeyIdentity: jest.Mock;
+    setProviderReference: jest.Mock;
+  };
   let notificationService: { notify: jest.Mock };
   let pimlicoService: {
     getRecoveryHashWithNonce: jest.Mock;
@@ -112,11 +121,19 @@ describe('RecoveryService', () => {
   let safeService: {
     getRecoveryModuleAddress: jest.Mock;
     buildMultiConfirmRecoveryCallData: jest.Mock;
+    getSafeInfo: jest.Mock;
   };
+  let turnkeyService: {
+    verifySessionToken: jest.Mock;
+    organizationControlsAddress: jest.Mock;
+  };
+  let authService: { openSessionForUser: jest.Mock };
 
   beforeEach(() => {
     recoveryRequestRepository = {
       findPendingByWalletId: jest.fn().mockResolvedValue(null),
+      findActiveByWalletId: jest.fn().mockResolvedValue(null),
+      findActiveOthersByWalletId: jest.fn().mockResolvedValue([]),
       create: jest.fn((data: Record<string, unknown>) => ({ id: 'rec-1', ...data })),
       save: jest.fn((entity: Record<string, unknown>) => Promise.resolve(entity)),
       findByIdWithRelations: jest.fn(),
@@ -145,6 +162,8 @@ describe('RecoveryService', () => {
       getById: jest.fn((id: string) =>
         Promise.resolve(id === ownerId ? owner : id === guardianUserId ? guardianUser : owner),
       ),
+      rebindTurnkeyIdentity: jest.fn().mockResolvedValue(owner),
+      setProviderReference: jest.fn().mockResolvedValue(undefined),
     };
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
     pimlicoService = {
@@ -159,6 +178,21 @@ describe('RecoveryService', () => {
         .fn()
         .mockReturnValue('0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897'),
       buildMultiConfirmRecoveryCallData: jest.fn().mockReturnValue('0xdead'),
+      getSafeInfo: jest.fn().mockResolvedValue({ owners: [newOwnerAddress] }),
+    };
+    turnkeyService = {
+      verifySessionToken: jest.fn().mockResolvedValue({
+        userId: 'tk-new',
+        organizationId: 'org-new',
+      }),
+      organizationControlsAddress: jest.fn().mockResolvedValue(true),
+    };
+    authService = {
+      openSessionForUser: jest.fn().mockResolvedValue({
+        accessToken: 'a',
+        refreshToken: 'r',
+        expiresIn: 3600,
+      }),
     };
 
     service = new RecoveryService(
@@ -171,6 +205,8 @@ describe('RecoveryService', () => {
       pimlicoService as never,
       relayerService as never,
       safeService as never,
+      turnkeyService as never,
+      authService as never,
     );
   });
 
@@ -223,7 +259,18 @@ describe('RecoveryService', () => {
     });
 
     it('rejects duplicate pending recovery', async () => {
-      recoveryRequestRepository.findPendingByWalletId.mockResolvedValue({ id: 'existing' });
+      recoveryRequestRepository.findActiveByWalletId.mockResolvedValue({
+        id: 'existing',
+        status: RecoveryRequestStatus.PENDING,
+      });
+      await expect(service.createRequest(dto)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects when an approved (not executed) recovery already exists', async () => {
+      recoveryRequestRepository.findActiveByWalletId.mockResolvedValue({
+        id: 'existing-approved',
+        status: RecoveryRequestStatus.APPROVED,
+      });
       await expect(service.createRequest(dto)).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -295,7 +342,7 @@ describe('RecoveryService', () => {
           walletId,
           status: RecoveryRequestStatus.PENDING,
           requiredApprovals: 2,
-          newOwnerAddress: '0x7Ac800000000000000000000000000000000894e',
+          newOwnerAddress,
           recoveryHash,
           recoveryNonce: '0',
           expiresAt: new Date(Date.now() + 86_400_000),
@@ -353,6 +400,105 @@ describe('RecoveryService', () => {
 
       const result = await service.decline('guardian-user-2', 'apr-g-2');
       expect(result.recoveryStatus).toBe(RecoveryRequestStatus.REJECTED);
+    });
+  });
+
+  describe('retryExecute', () => {
+    it('relays multiConfirmRecovery for an approved stuck request', async () => {
+      const request = {
+        id: 'rec-approved',
+        walletId,
+        wallet,
+        status: RecoveryRequestStatus.APPROVED,
+        requiredApprovals: 2,
+        newOwnerAddress,
+        recoveryHash,
+        recoveryNonce: '0',
+        expiresAt: new Date(Date.now() + 86_400_000),
+        approvals: [
+          {
+            status: RecoveryApprovalStatus.APPROVED,
+            signature: `0x${'11'.repeat(65)}`,
+            guardian: guardians[0],
+          },
+          {
+            status: RecoveryApprovalStatus.APPROVED,
+            signature: `0x${'22'.repeat(65)}`,
+            guardian: guardians[1],
+          },
+        ],
+      };
+      recoveryRequestRepository.findByIdWithRelations
+        .mockResolvedValueOnce(request)
+        .mockResolvedValueOnce({
+          ...request,
+          status: RecoveryRequestStatus.EXECUTED,
+          executionTxHash: '0xtxhash',
+        });
+
+      const result = await service.retryExecute('rec-approved');
+      expect(result.status).toBe(RecoveryRequestStatus.EXECUTED);
+      expect(relayerService.relayTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('cancel', () => {
+    it('cancels a pending request when email matches', async () => {
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        id: 'rec-1',
+        status: RecoveryRequestStatus.PENDING,
+        requestedByEmail: 'owner@example.com',
+        wallet: { ...wallet, user: owner },
+        approvals: [],
+      });
+
+      const result = await service.cancel('rec-1', { email: 'owner@example.com' });
+      expect(result.status).toBe(RecoveryRequestStatus.CANCELLED);
+    });
+  });
+
+  describe('claim', () => {
+    it('rebinds Turnkey identity and issues app tokens after on-chain execute', async () => {
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        id: 'rec-1',
+        walletId,
+        wallet: { ...wallet, ownerAddress: newOwnerAddress, user: owner },
+        status: RecoveryRequestStatus.EXECUTED,
+        executionTxHash: '0xtxhash',
+        newOwnerAddress,
+        approvals: [],
+      });
+
+      const tokens = await service.claim(
+        'rec-1',
+        { sessionJwt: 'jwt', deviceName: 'phone', platform: 'ios' },
+        { ipAddress: '127.0.0.1' },
+      );
+
+      expect(turnkeyService.verifySessionToken).toHaveBeenCalledWith('jwt');
+      expect(turnkeyService.organizationControlsAddress).toHaveBeenCalled();
+      expect(safeService.getSafeInfo).toHaveBeenCalled();
+      expect(profileService.rebindTurnkeyIdentity).toHaveBeenCalledWith(ownerId, 'tk-new');
+      expect(authService.openSessionForUser).toHaveBeenCalledWith(
+        ownerId,
+        { ipAddress: '127.0.0.1' },
+        expect.objectContaining({ revokeOthers: true }),
+      );
+      expect(tokens.accessToken).toBe('a');
+    });
+
+    it('rejects claim when recovery is not executed', async () => {
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        id: 'rec-1',
+        status: RecoveryRequestStatus.APPROVED,
+        executionTxHash: null,
+        newOwnerAddress,
+        wallet,
+      });
+
+      await expect(
+        service.claim('rec-1', { sessionJwt: 'jwt' }, {}),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });

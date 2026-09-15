@@ -157,6 +157,11 @@ export class RecoveryRequestDto {
   @ApiPropertyOptional()
   executionTxHash?: string;
 
+  @ApiPropertyOptional({
+    description: 'Present when on-chain multiConfirmRecovery relay failed (status stays approved)',
+  })
+  failureReason?: string;
+
   @ApiPropertyOptional()
   expiresAt?: Date;
 
@@ -318,6 +323,7 @@ export function toRecoveryRequestDto(
     recoveryNonce: entity.recoveryNonce,
     typedData,
     executionTxHash: entity.executionTxHash,
+    failureReason: entity.failureReason,
     expiresAt: entity.expiresAt,
     createdAt: entity.createdAt,
   });

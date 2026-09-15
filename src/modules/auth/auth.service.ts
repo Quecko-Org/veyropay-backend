@@ -314,6 +314,34 @@ export class AuthService {
     await Promise.all(sessions.map((session) => this.deviceSessionRepository.revoke(session.id)));
   }
 
+  // Used after guardian social recovery claim: bind a device session to the recovered
+  // wallet owner without creating a new user/wallet via findOrCreateByTurnkeyUserId.
+  async openSessionForUser(
+    userId: string,
+    meta: IRequestMetadata,
+    options?: { deviceName?: string; platform?: string; revokeOthers?: boolean },
+  ): Promise<AuthTokensDto> {
+    if (options?.revokeOthers) {
+      await this.revokeAllSessions(userId);
+    }
+
+    const session = await this.createDeviceSession(
+      userId,
+      options?.deviceName,
+      options?.platform,
+      meta.ipAddress,
+    );
+
+    await this.systemService.recordAudit(
+      'recovery_claim_login',
+      userId,
+      { deviceName: options?.deviceName },
+      meta.ipAddress,
+    );
+
+    return this.issueTokens(userId, session.id);
+  }
+
   private async createDeviceSession(
     userId: string,
     deviceName: string | undefined,

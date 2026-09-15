@@ -8,6 +8,8 @@ import {
 import { Address, getAddress, Hex, recoverAddress } from 'viem';
 import { GuardianRepository } from '@modules/guardian/repositories/guardian.repository';
 import { GuardianEntity } from '@modules/guardian/entities/guardian.entity';
+import { AuthService, IRequestMetadata } from '@modules/auth/auth.service';
+import { AuthTokensDto } from '@modules/auth/dto/auth-tokens.dto';
 import { NotificationService } from '@modules/notification/notification.service';
 import { ProfileService } from '@modules/profile/profile.service';
 import { UserEntity } from '@modules/profile/entities/user.entity';
@@ -18,6 +20,8 @@ import { RelayerService } from '@integrations/pimlico/relayer.service';
 import { SafeService } from '@integrations/safe/safe.service';
 import { buildRecoveryTypedData } from '@integrations/safe/recovery-typed-data';
 import { IGuardianSignature } from '@integrations/safe/social-recovery.util';
+import { TurnkeyService } from '@integrations/turnkey/turnkey.service';
+import { TURNKEY_ORGANIZATION_PROVIDER_KEY } from '@integrations/turnkey/constants';
 import {
   NotificationType,
   RecoveryApprovalStatus,
@@ -25,6 +29,8 @@ import {
   UserStatus,
 } from '@shared/enums';
 import { RECOVERY_REQUEST_TTL_DAYS } from './constants';
+import { CancelRecoveryDto } from './dto/cancel-recovery.dto';
+import { ClaimRecoveryDto } from './dto/claim-recovery.dto';
 import { CreateRecoveryRequestDto } from './dto/create-recovery-request.dto';
 import {
   IncomingRecoveryItemDto,
@@ -58,6 +64,8 @@ export class RecoveryService {
     private readonly pimlicoService: PimlicoService,
     private readonly relayerService: RelayerService,
     private readonly safeService: SafeService,
+    private readonly turnkeyService: TurnkeyService,
+    private readonly authService: AuthService,
   ) {}
 
   async lookupByEmail(email: string): Promise<RecoveryLookupDto> {
@@ -117,9 +125,13 @@ export class RecoveryService {
       );
     }
 
-    const existing = await this.recoveryRequestRepository.findPendingByWalletId(wallet.id);
+    const existing = await this.recoveryRequestRepository.findActiveByWalletId(wallet.id);
     if (existing) {
-      throw new ConflictException('A recovery request is already pending for this wallet');
+      throw new ConflictException(
+        existing.status === RecoveryRequestStatus.APPROVED
+          ? 'A recovery request is already approved and awaiting on-chain execution for this wallet - retry execute or cancel it first'
+          : 'A recovery request is already pending for this wallet',
+      );
     }
 
     let newOwnerAddress: Address;
@@ -238,6 +250,134 @@ export class RecoveryService {
     return this.decide(callerId, approvalId, RecoveryApprovalStatus.REJECTED);
   }
 
+  async retryExecute(id: string): Promise<RecoveryRequestDto> {
+    const request = await this.recoveryRequestRepository.findByIdWithRelations(id);
+    if (!request) {
+      throw new NotFoundException('Recovery request not found');
+    }
+
+    if (request.status === RecoveryRequestStatus.EXECUTED) {
+      return toRecoveryRequestDto(request, this.typedDataFor(request, request.wallet));
+    }
+
+    if (request.status !== RecoveryRequestStatus.APPROVED) {
+      throw new ConflictException(
+        'Only an approved recovery request can be executed on-chain - wait for guardian threshold',
+      );
+    }
+
+    if (request.expiresAt && request.expiresAt.getTime() < Date.now()) {
+      request.status = RecoveryRequestStatus.EXPIRED;
+      await this.recoveryRequestRepository.save(request);
+      throw new ConflictException('This recovery request has expired');
+    }
+
+    await this.executeOnChain(request);
+    const refreshed = await this.recoveryRequestRepository.findByIdWithRelations(id);
+    if (!refreshed) {
+      throw new NotFoundException('Recovery request not found');
+    }
+    if (refreshed.status !== RecoveryRequestStatus.EXECUTED) {
+      throw new ConflictException(
+        refreshed.failureReason ?? 'On-chain recovery execution failed - retry later',
+      );
+    }
+    return toRecoveryRequestDto(refreshed, this.typedDataFor(refreshed, refreshed.wallet));
+  }
+
+  async cancel(id: string, dto: CancelRecoveryDto): Promise<RecoveryRequestDto> {
+    const request = await this.recoveryRequestRepository.findByIdWithRelations(id);
+    if (!request) {
+      throw new NotFoundException('Recovery request not found');
+    }
+
+    if (
+      request.status !== RecoveryRequestStatus.PENDING &&
+      request.status !== RecoveryRequestStatus.APPROVED
+    ) {
+      throw new ConflictException(
+        'Only pending or approved (not yet executed) recovery can be cancelled',
+      );
+    }
+
+    if (request.executionTxHash) {
+      throw new ConflictException('Recovery already executed on-chain and cannot be cancelled');
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const ownerEmail = request.wallet?.user?.email?.trim().toLowerCase();
+    const allowed =
+      email === request.requestedByEmail.trim().toLowerCase() ||
+      (ownerEmail !== undefined && email === ownerEmail);
+    if (!allowed) {
+      throw new NotFoundException('Recovery request not found');
+    }
+
+    request.status = RecoveryRequestStatus.CANCELLED;
+    await this.recoveryRequestRepository.save(request);
+    return toRecoveryRequestDto(request, this.typedDataFor(request, request.wallet));
+  }
+
+  // Final step after EXECUTED: prove Turnkey session controls newOwnerAddress, confirm
+  // on-chain Safe ownership, rebind the wallet owner identity, issue app JWTs.
+  async claim(
+    id: string,
+    dto: ClaimRecoveryDto,
+    meta: IRequestMetadata,
+  ): Promise<AuthTokensDto> {
+    const request = await this.recoveryRequestRepository.findByIdWithRelations(id);
+    if (!request) {
+      throw new NotFoundException('Recovery request not found');
+    }
+
+    if (request.status !== RecoveryRequestStatus.EXECUTED || !request.executionTxHash) {
+      throw new ConflictException(
+        'Recovery must be fully executed on-chain before the owner can open the wallet - call execute if stuck at approved',
+      );
+    }
+
+    const wallet = request.wallet ?? (await this.walletService.getById(request.walletId));
+    if (!wallet.smartAccountAddress) {
+      throw new ConflictException('Smart account has not been provisioned yet');
+    }
+
+    const identity = await this.turnkeyService.verifySessionToken(dto.sessionJwt);
+    const controls = await this.turnkeyService.organizationControlsAddress(
+      identity.organizationId,
+      request.newOwnerAddress,
+    );
+    if (!controls) {
+      throw new BadRequestException(
+        'Turnkey session does not control newOwnerAddress - stampLogin with the recovery passkey first',
+      );
+    }
+
+    await this.assertOnChainOwner(wallet.smartAccountAddress, request.newOwnerAddress);
+
+    if (
+      !wallet.ownerAddress ||
+      getAddress(wallet.ownerAddress) !== getAddress(request.newOwnerAddress)
+    ) {
+      wallet.ownerAddress = getAddress(request.newOwnerAddress);
+      await this.walletService.save(wallet);
+    }
+
+    await this.profileService.rebindTurnkeyIdentity(wallet.userId, identity.userId);
+    await this.profileService.setProviderReference(
+      wallet.userId,
+      TURNKEY_ORGANIZATION_PROVIDER_KEY,
+      identity.organizationId,
+    );
+
+    await this.cancelSiblingActiveRequests(wallet.id, request.id);
+
+    return this.authService.openSessionForUser(wallet.userId, meta, {
+      deviceName: dto.deviceName,
+      platform: dto.platform,
+      revokeOthers: true,
+    });
+  }
+
   private async decide(
     callerId: string,
     approvalId: string,
@@ -315,8 +455,7 @@ export class RecoveryService {
   }
 
   private async executeOnChain(request: RecoveryRequestEntity): Promise<void> {
-    const wallet =
-      request.wallet ?? (await this.walletService.getById(request.walletId));
+    const wallet = request.wallet ?? (await this.walletService.getById(request.walletId));
     if (!wallet.smartAccountAddress || !request.recoveryHash) {
       request.failureReason = 'Missing smart account or recovery hash';
       await this.recoveryRequestRepository.save(request);
@@ -364,11 +503,48 @@ export class RecoveryService {
       wallet.ownerAddress = newOwner;
       await this.walletService.save(wallet);
       await this.recoveryRequestRepository.save(request);
+      await this.cancelSiblingActiveRequests(wallet.id, request.id);
     } catch (error) {
       this.logger.warn({ err: error, requestId: request.id }, 'On-chain recovery execution failed');
       request.failureReason =
         error instanceof Error ? error.message : 'On-chain recovery execution failed';
       await this.recoveryRequestRepository.save(request);
+    }
+  }
+
+  private async cancelSiblingActiveRequests(walletId: string, exceptId: string): Promise<void> {
+    const siblings = await this.recoveryRequestRepository.findActiveOthersByWalletId(
+      walletId,
+      exceptId,
+    );
+    for (const sibling of siblings) {
+      sibling.status = RecoveryRequestStatus.CANCELLED;
+      await this.recoveryRequestRepository.save(sibling);
+    }
+  }
+
+  private async assertOnChainOwner(safeAddress: string, newOwnerAddress: string): Promise<void> {
+    let owners: string[];
+    try {
+      const info = await this.safeService.getSafeInfo(safeAddress);
+      owners = info.owners;
+    } catch (error) {
+      this.logger.warn({ err: error, safeAddress }, 'Unable to read Safe owners for claim');
+      throw new ConflictException('Unable to verify on-chain Safe ownership - try again shortly');
+    }
+
+    const target = getAddress(newOwnerAddress);
+    const matches = owners.some((owner) => {
+      try {
+        return getAddress(owner) === target;
+      } catch {
+        return false;
+      }
+    });
+    if (!matches) {
+      throw new ConflictException(
+        'On-chain Safe owner has not changed to newOwnerAddress yet - wait for execution confirmation',
+      );
     }
   }
 

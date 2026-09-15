@@ -52,6 +52,26 @@ export class ProfileService {
     return this.userRepository.save(user);
   }
 
+  // After social recovery execute, bind the recovered wallet owner to the new Turnkey
+  // identity. Any provisional user created by a premature /auth/login is retired so the
+  // unique turnkey_user_id constraint can move to the real owner.
+  async rebindTurnkeyIdentity(ownerUserId: string, turnkeyUserId: string): Promise<UserEntity> {
+    const owner = await this.getById(ownerUserId);
+    if (owner.turnkeyUserId === turnkeyUserId) {
+      return owner;
+    }
+
+    const provisional = await this.userRepository.findByTurnkeyUserId(turnkeyUserId);
+    if (provisional && provisional.id !== owner.id) {
+      provisional.turnkeyUserId = `orphaned_${provisional.id}_${Date.now()}`;
+      provisional.status = UserStatus.DELETED;
+      await this.userRepository.save(provisional);
+    }
+
+    owner.turnkeyUserId = turnkeyUserId;
+    return this.userRepository.save(owner);
+  }
+
   async setProviderReference(userId: string, provider: string, referenceId: string): Promise<void> {
     const existing = await this.providerReferenceRepository.findByUserAndProvider(userId, provider);
 

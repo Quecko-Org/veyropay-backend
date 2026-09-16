@@ -28,16 +28,35 @@ export class RelayerService {
   }
 
   getAddress(): Address {
-    return privateKeyToAccount(this.config.relayerPrivateKey as Hex).address;
+    try {
+      return privateKeyToAccount(this.config.relayerPrivateKey as Hex).address;
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Relayer private key is invalid');
+      throw new ProviderException(
+        PIMLICO_PROVIDER_NAME,
+        'RELAYER_PRIVATE_KEY is invalid - set a funded 0x + 64 hex EOA key in .env',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
   }
 
   // Signs and broadcasts a plain EIP-1559 transaction from the relayer's own EOA.
   // Returns the transaction hash immediately after broadcast - like the rest of this
   // codebase's submission flows (see TransferService), it does not poll for the receipt.
   async relayTransaction(to: Address, data: Hex): Promise<Hex> {
+    let account;
     try {
-      const account = privateKeyToAccount(this.config.relayerPrivateKey as Hex);
+      account = privateKeyToAccount(this.config.relayerPrivateKey as Hex);
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Relayer private key is invalid');
+      throw new ProviderException(
+        PIMLICO_PROVIDER_NAME,
+        'RELAYER_PRIVATE_KEY is invalid - set a funded 0x + 64 hex EOA key in .env',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
 
+    try {
       const [nonceHex, gasPrice] = await Promise.all([
         this.chainRpcClient.getTransactionCount(account.address),
         this.client.getGasPrice(),

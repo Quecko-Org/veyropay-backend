@@ -496,9 +496,9 @@ describe('RecoveryService', () => {
         wallet,
       });
 
-      await expect(
-        service.claim('rec-1', { sessionJwt: 'jwt' }, {}),
-      ).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.claim('rec-1', { sessionJwt: 'jwt' }, {})).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
   });
 });

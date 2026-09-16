@@ -50,6 +50,24 @@ export function buildMultiConfirmRecoveryCallData(
   });
 }
 
+// Public / relayer-callable after the module grace period (executeAfter). This is what
+// actually swaps Safe owners - multiConfirmRecovery only starts the delay.
+export function buildFinalizeRecoveryCallData(wallet: Address): Hex {
+  return encodeFunctionData({
+    abi: SOCIAL_RECOVERY_MODULE_ABI,
+    functionName: 'finalizeRecovery',
+    args: [wallet],
+  });
+}
+
+export function buildGetRecoveryRequestCallData(wallet: Address): Hex {
+  return encodeFunctionData({
+    abi: SOCIAL_RECOVERY_MODULE_ABI,
+    functionName: 'getRecoveryRequest',
+    args: [wallet],
+  });
+}
+
 export function buildGetRecoveryHashCallData(
   wallet: Address,
   newOwners: Address[],

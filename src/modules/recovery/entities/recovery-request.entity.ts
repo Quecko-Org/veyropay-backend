@@ -39,8 +39,11 @@ export class RecoveryRequestEntity extends BaseEntity {
   @Column({ name: 'execution_tx_hash', nullable: true })
   executionTxHash?: string;
 
-  @Column({ name: 'failure_reason', nullable: true })
-  failureReason?: string;
+  @Column({ name: 'failure_reason', nullable: true, type: 'varchar' })
+  failureReason?: string | null;
+
+  @Column({ name: 'finalize_after', type: 'timestamptz', nullable: true })
+  finalizeAfter?: Date | null;
 
   @Column({ name: 'recovery_hash', nullable: true })
   recoveryHash?: string;

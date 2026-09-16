@@ -82,6 +82,31 @@ export const SOCIAL_RECOVERY_MODULE_ABI = [
   },
   {
     type: 'function',
+    name: 'finalizeRecovery',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: '_wallet', type: 'address' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'getRecoveryRequest',
+    stateMutability: 'view',
+    inputs: [{ name: '_wallet', type: 'address' }],
+    outputs: [
+      {
+        name: 'request',
+        type: 'tuple',
+        components: [
+          { name: 'guardiansApprovalCount', type: 'uint256' },
+          { name: 'newThreshold', type: 'uint256' },
+          { name: 'executeAfter', type: 'uint64' },
+          { name: 'newOwners', type: 'address[]' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
     name: 'getRecoveryHash',
     stateMutability: 'view',
     inputs: [

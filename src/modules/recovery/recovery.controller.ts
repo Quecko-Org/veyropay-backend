@@ -100,10 +100,12 @@ export class RecoveryController {
     default: { limit: RECOVERY_PUBLIC_THROTTLE_LIMIT, ttl: RECOVERY_PUBLIC_THROTTLE_TTL_MS },
   })
   @ApiOperation({
-    summary: 'Retry on-chain multiConfirmRecovery for an approved request',
+    summary: 'Confirm and/or finalize on-chain social recovery',
     description:
-      'Use when status is approved but executionTxHash is null (relayer failed). ' +
-      'Idempotent if already executed.',
+      '1) Relays multiConfirmRecovery if not yet started (starts module grace period). ' +
+      '2) After finalizeAfter, relays finalizeRecovery which swaps Safe owners. ' +
+      'Poll GET request for finalizeAfter; call this again when the grace period ends. ' +
+      'Also repairs stuck executed rows where owners were not swapped yet.',
   })
   retryExecute(@Param('id', ParseUUIDPipe) id: string) {
     return this.recoveryService.retryExecute(id);

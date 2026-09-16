@@ -13,7 +13,9 @@ import { SOCIAL_RECOVERY_MODULE_ABI } from './social-recovery-module.constant';
 import {
   buildAddGuardianWithThresholdCallData,
   buildChangeThresholdCallData,
+  buildFinalizeRecoveryCallData,
   buildGetRecoveryHashCallData,
+  buildGetRecoveryRequestCallData,
   buildGuardiansCountCallData,
   buildIsGuardianCallData,
   buildMultiConfirmRecoveryCallData,
@@ -190,6 +192,14 @@ export class SafeService {
       signatures,
       true,
     );
+  }
+
+  buildFinalizeRecoveryCallData(walletAddress: Address): Hex {
+    return buildFinalizeRecoveryCallData(walletAddress);
+  }
+
+  buildGetRecoveryRequestCallData(walletAddress: Address): Hex {
+    return buildGetRecoveryRequestCallData(walletAddress);
   }
 
   buildGetRecoveryHashCallData(

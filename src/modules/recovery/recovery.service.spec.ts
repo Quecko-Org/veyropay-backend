@@ -116,11 +116,13 @@ describe('RecoveryService', () => {
   let pimlicoService: {
     getRecoveryHashWithNonce: jest.Mock;
     isSocialRecoveryGuardian: jest.Mock;
+    getOnChainRecoveryRequest: jest.Mock;
   };
   let relayerService: { relayTransaction: jest.Mock };
   let safeService: {
     getRecoveryModuleAddress: jest.Mock;
     buildMultiConfirmRecoveryCallData: jest.Mock;
+    buildFinalizeRecoveryCallData: jest.Mock;
     getSafeInfo: jest.Mock;
   };
   let turnkeyService: {
@@ -169,6 +171,12 @@ describe('RecoveryService', () => {
     pimlicoService = {
       getRecoveryHashWithNonce: jest.fn().mockResolvedValue({ hash: recoveryHash, nonce: 0n }),
       isSocialRecoveryGuardian: jest.fn().mockResolvedValue(true),
+      getOnChainRecoveryRequest: jest.fn().mockResolvedValue({
+        guardiansApprovalCount: 2n,
+        newThreshold: 1n,
+        executeAfter: 0n,
+        newOwners: [],
+      }),
     };
     relayerService = {
       relayTransaction: jest.fn().mockResolvedValue('0xtxhash'),
@@ -178,7 +186,8 @@ describe('RecoveryService', () => {
         .fn()
         .mockReturnValue('0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897'),
       buildMultiConfirmRecoveryCallData: jest.fn().mockReturnValue('0xdead'),
-      getSafeInfo: jest.fn().mockResolvedValue({ owners: [newOwnerAddress] }),
+      buildFinalizeRecoveryCallData: jest.fn().mockReturnValue('0xfinalize'),
+      getSafeInfo: jest.fn().mockResolvedValue({ owners: [wallet.ownerAddress] }),
     };
     turnkeyService = {
       verifySessionToken: jest.fn().mockResolvedValue({
@@ -365,11 +374,32 @@ describe('RecoveryService', () => {
         email: 'sofie@example.com',
       });
 
+      // multiConfirm starts grace period at T+0; then finalize when period already elapsed.
+      pimlicoService.getOnChainRecoveryRequest
+        .mockResolvedValueOnce({
+          guardiansApprovalCount: 0n,
+          newThreshold: 1n,
+          executeAfter: 0n,
+          newOwners: [],
+        })
+        .mockResolvedValueOnce({
+          guardiansApprovalCount: 2n,
+          newThreshold: 1n,
+          executeAfter: BigInt(Math.floor(Date.now() / 1000) - 10),
+          newOwners: [newOwnerAddress],
+        });
+      safeService.getSafeInfo
+        .mockResolvedValueOnce({ owners: [wallet.ownerAddress] })
+        .mockResolvedValueOnce({ owners: [newOwnerAddress] });
+      relayerService.relayTransaction
+        .mockResolvedValueOnce('0xconfirm')
+        .mockResolvedValueOnce('0xfinalize');
+
       const result = await service.approve('guardian-user-2', 'apr-g-2', signature);
       expect(result.recoveryStatus).toBe(RecoveryRequestStatus.EXECUTED);
       expect(result.approvalsCount).toBe(2);
-      expect(relayerService.relayTransaction).toHaveBeenCalled();
-      expect(result.executionTxHash).toBe('0xtxhash');
+      expect(relayerService.relayTransaction).toHaveBeenCalledTimes(2);
+      expect(result.executionTxHash).toBe('0xfinalize');
     });
   });
 
@@ -404,7 +434,7 @@ describe('RecoveryService', () => {
   });
 
   describe('retryExecute', () => {
-    it('relays multiConfirmRecovery for an approved stuck request', async () => {
+    it('finalizes recovery after grace period when already confirmed on-chain', async () => {
       const request = {
         id: 'rec-approved',
         walletId,
@@ -433,12 +463,28 @@ describe('RecoveryService', () => {
         .mockResolvedValueOnce({
           ...request,
           status: RecoveryRequestStatus.EXECUTED,
-          executionTxHash: '0xtxhash',
+          executionTxHash: '0xfinalize',
+          finalizeAfter: null,
         });
+
+      pimlicoService.getOnChainRecoveryRequest.mockResolvedValue({
+        guardiansApprovalCount: 2n,
+        newThreshold: 1n,
+        executeAfter: BigInt(Math.floor(Date.now() / 1000) - 60),
+        newOwners: [newOwnerAddress],
+      });
+      safeService.getSafeInfo
+        .mockResolvedValueOnce({ owners: [wallet.ownerAddress] })
+        .mockResolvedValueOnce({ owners: [newOwnerAddress] });
+      relayerService.relayTransaction.mockResolvedValue('0xfinalize');
 
       const result = await service.retryExecute('rec-approved');
       expect(result.status).toBe(RecoveryRequestStatus.EXECUTED);
-      expect(relayerService.relayTransaction).toHaveBeenCalled();
+      expect(safeService.buildFinalizeRecoveryCallData).toHaveBeenCalled();
+      expect(relayerService.relayTransaction).toHaveBeenCalledWith(
+        expect.any(String),
+        '0xfinalize',
+      );
     });
   });
 

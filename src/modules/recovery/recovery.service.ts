@@ -256,13 +256,12 @@ export class RecoveryService {
       throw new NotFoundException('Recovery request not found');
     }
 
-    if (request.status === RecoveryRequestStatus.EXECUTED) {
-      return toRecoveryRequestDto(request, this.typedDataFor(request, request.wallet));
-    }
-
-    if (request.status !== RecoveryRequestStatus.APPROVED) {
+    if (
+      request.status !== RecoveryRequestStatus.APPROVED &&
+      request.status !== RecoveryRequestStatus.EXECUTED
+    ) {
       throw new ConflictException(
-        'Only an approved recovery request can be executed on-chain - wait for guardian threshold',
+        'Only an approved (or stuck executed) recovery request can be finalized on-chain',
       );
     }
 
@@ -277,12 +276,20 @@ export class RecoveryService {
     if (!refreshed) {
       throw new NotFoundException('Recovery request not found');
     }
-    if (refreshed.status !== RecoveryRequestStatus.EXECUTED) {
+
+    if (refreshed.status === RecoveryRequestStatus.EXECUTED && refreshed.executionTxHash) {
+      return toRecoveryRequestDto(refreshed, this.typedDataFor(refreshed, refreshed.wallet));
+    }
+
+    if (refreshed.finalizeAfter && refreshed.finalizeAfter.getTime() > Date.now()) {
       throw new ConflictException(
-        refreshed.failureReason ?? 'On-chain recovery execution failed - retry later',
+        `Recovery grace period active until ${refreshed.finalizeAfter.toISOString()} - call execute again after that to finalizeRecovery`,
       );
     }
-    return toRecoveryRequestDto(refreshed, this.typedDataFor(refreshed, refreshed.wallet));
+
+    throw new ConflictException(
+      refreshed.failureReason ?? 'On-chain recovery execution failed - retry later',
+    );
   }
 
   async cancel(id: string, dto: CancelRecoveryDto): Promise<RecoveryRequestDto> {
@@ -462,6 +469,93 @@ export class RecoveryService {
       return;
     }
 
+    const safeAddress = getAddress(wallet.smartAccountAddress);
+    const newOwner = getAddress(request.newOwnerAddress);
+
+    if (await this.isOnChainOwner(safeAddress, newOwner)) {
+      request.status = RecoveryRequestStatus.EXECUTED;
+      request.failureReason = null;
+      request.finalizeAfter = null;
+      wallet.ownerAddress = newOwner;
+      await this.walletService.save(wallet);
+      await this.recoveryRequestRepository.save(request);
+      await this.cancelSiblingActiveRequests(wallet.id, request.id);
+      return;
+    }
+
+    let onChainRequest = await this.safeReadRecoveryRequest(safeAddress);
+
+    // multiConfirmRecovery starts the grace period; skip if already started on-chain.
+    if (!onChainRequest || onChainRequest.executeAfter === 0n) {
+      const confirmed = await this.relayMultiConfirm(request, wallet, safeAddress, newOwner);
+      if (!confirmed) {
+        return;
+      }
+      onChainRequest = await this.safeReadRecoveryRequest(safeAddress);
+    }
+
+    if (!onChainRequest || onChainRequest.executeAfter === 0n) {
+      request.status = RecoveryRequestStatus.APPROVED;
+      request.failureReason =
+        'multiConfirmRecovery succeeded but no on-chain recovery request was found';
+      await this.recoveryRequestRepository.save(request);
+      return;
+    }
+
+    const finalizeAfterMs = Number(onChainRequest.executeAfter) * 1000;
+    request.finalizeAfter = new Date(finalizeAfterMs);
+    request.status = RecoveryRequestStatus.APPROVED;
+    request.failureReason = null;
+
+    if (Date.now() < finalizeAfterMs) {
+      await this.recoveryRequestRepository.save(request);
+      this.logger.log(
+        {
+          requestId: request.id,
+          finalizeAfter: request.finalizeAfter.toISOString(),
+        },
+        'Recovery confirmed on-chain; waiting for SocialRecoveryModule grace period before finalize',
+      );
+      return;
+    }
+
+    try {
+      const finalizeTxHash = await this.relayerService.relayTransaction(
+        this.safeService.getRecoveryModuleAddress(),
+        this.safeService.buildFinalizeRecoveryCallData(safeAddress),
+      );
+
+      if (!(await this.isOnChainOwner(safeAddress, newOwner))) {
+        request.failureReason =
+          'finalizeRecovery relayed but Safe owners do not yet include newOwnerAddress';
+        request.executionTxHash = finalizeTxHash;
+        await this.recoveryRequestRepository.save(request);
+        return;
+      }
+
+      request.status = RecoveryRequestStatus.EXECUTED;
+      request.executedAt = new Date();
+      request.executionTxHash = finalizeTxHash;
+      request.failureReason = null;
+      request.finalizeAfter = null;
+      wallet.ownerAddress = newOwner;
+      await this.walletService.save(wallet);
+      await this.recoveryRequestRepository.save(request);
+      await this.cancelSiblingActiveRequests(wallet.id, request.id);
+    } catch (error) {
+      this.logger.warn({ err: error, requestId: request.id }, 'finalizeRecovery failed');
+      request.failureReason =
+        error instanceof Error ? error.message : 'finalizeRecovery failed';
+      await this.recoveryRequestRepository.save(request);
+    }
+  }
+
+  private async relayMultiConfirm(
+    request: RecoveryRequestEntity,
+    wallet: WalletEntity,
+    safeAddress: Address,
+    newOwner: Address,
+  ): Promise<boolean> {
     const approvals = (request.approvals ?? []).filter(
       (row) =>
         row.status === RecoveryApprovalStatus.APPROVED &&
@@ -472,7 +566,7 @@ export class RecoveryService {
     if (approvals.length < request.requiredApprovals) {
       request.failureReason = 'Not enough signed guardian approvals';
       await this.recoveryRequestRepository.save(request);
-      return;
+      return false;
     }
 
     const signatures: IGuardianSignature[] = approvals
@@ -483,8 +577,6 @@ export class RecoveryService {
       }))
       .sort((a, b) => a.signer.toLowerCase().localeCompare(b.signer.toLowerCase()));
 
-    const safeAddress = getAddress(wallet.smartAccountAddress);
-    const newOwner = getAddress(request.newOwnerAddress);
     const calldata = this.safeService.buildMultiConfirmRecoveryCallData(
       safeAddress,
       newOwner,
@@ -496,19 +588,49 @@ export class RecoveryService {
         this.safeService.getRecoveryModuleAddress(),
         calldata,
       );
-      request.status = RecoveryRequestStatus.EXECUTED;
-      request.executedAt = new Date();
       request.executionTxHash = txHash;
-      request.failureReason = undefined;
-      wallet.ownerAddress = newOwner;
-      await this.walletService.save(wallet);
+      request.failureReason = null;
+      request.status = RecoveryRequestStatus.APPROVED;
       await this.recoveryRequestRepository.save(request);
-      await this.cancelSiblingActiveRequests(wallet.id, request.id);
+      return true;
     } catch (error) {
       this.logger.warn({ err: error, requestId: request.id }, 'On-chain recovery execution failed');
       request.failureReason =
         error instanceof Error ? error.message : 'On-chain recovery execution failed';
+      request.status = RecoveryRequestStatus.APPROVED;
       await this.recoveryRequestRepository.save(request);
+      return false;
+    }
+  }
+
+  private async safeReadRecoveryRequest(safeAddress: Address): Promise<{
+    guardiansApprovalCount: bigint;
+    newThreshold: bigint;
+    executeAfter: bigint;
+    newOwners: readonly Address[];
+  } | null> {
+    try {
+      return await this.pimlicoService.getOnChainRecoveryRequest(safeAddress);
+    } catch (error) {
+      this.logger.warn({ err: error, safeAddress }, 'Unable to read on-chain recovery request');
+      return null;
+    }
+  }
+
+  private async isOnChainOwner(safeAddress: string, newOwnerAddress: string): Promise<boolean> {
+    try {
+      const info = await this.safeService.getSafeInfo(safeAddress);
+      const target = getAddress(newOwnerAddress);
+      return info.owners.some((owner) => {
+        try {
+          return getAddress(owner) === target;
+        } catch {
+          return false;
+        }
+      });
+    } catch (error) {
+      this.logger.warn({ err: error, safeAddress }, 'Unable to read Safe owners');
+      return false;
     }
   }
 
@@ -524,28 +646,12 @@ export class RecoveryService {
   }
 
   private async assertOnChainOwner(safeAddress: string, newOwnerAddress: string): Promise<void> {
-    let owners: string[];
-    try {
-      const info = await this.safeService.getSafeInfo(safeAddress);
-      owners = info.owners;
-    } catch (error) {
-      this.logger.warn({ err: error, safeAddress }, 'Unable to read Safe owners for claim');
-      throw new ConflictException('Unable to verify on-chain Safe ownership - try again shortly');
+    if (await this.isOnChainOwner(safeAddress, newOwnerAddress)) {
+      return;
     }
-
-    const target = getAddress(newOwnerAddress);
-    const matches = owners.some((owner) => {
-      try {
-        return getAddress(owner) === target;
-      } catch {
-        return false;
-      }
-    });
-    if (!matches) {
-      throw new ConflictException(
-        'On-chain Safe owner has not changed to newOwnerAddress yet - wait for execution confirmation',
-      );
-    }
+    throw new ConflictException(
+      'On-chain Safe owner has not changed to newOwnerAddress yet - wait for grace period then POST .../execute to finalizeRecovery',
+    );
   }
 
   private async assertValidGuardianSignature(

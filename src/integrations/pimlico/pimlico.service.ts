@@ -174,6 +174,28 @@ export class PimlicoService {
     }
   }
 
+  async getOnChainRecoveryRequest(safeAddress: Address): Promise<{
+    guardiansApprovalCount: bigint;
+    newThreshold: bigint;
+    executeAfter: bigint;
+    newOwners: readonly Address[];
+  }> {
+    try {
+      const result = await this.chainRpcClient.ethCall(
+        this.safeService.getRecoveryModuleAddress(),
+        this.safeService.buildGetRecoveryRequestCallData(safeAddress),
+      );
+      return decodeFunctionResult({
+        abi: SOCIAL_RECOVERY_MODULE_ABI,
+        functionName: 'getRecoveryRequest',
+        data: result as `0x${string}`,
+      });
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Recovery request on-chain lookup failed');
+      throw error;
+    }
+  }
+
   async isSocialRecoveryGuardian(safeAddress: Address, guardianAddress: Address): Promise<boolean> {
     try {
       const result = await this.chainRpcClient.ethCall(

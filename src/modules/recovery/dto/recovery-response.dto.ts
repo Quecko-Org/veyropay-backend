@@ -160,7 +160,13 @@ export class RecoveryRequestDto {
   @ApiPropertyOptional({
     description: 'Present when on-chain multiConfirmRecovery relay failed (status stays approved)',
   })
-  failureReason?: string;
+  failureReason?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'When set, SocialRecoveryModule grace period ends at this time - call POST .../execute again after to finalizeRecovery (owner swap)',
+  })
+  finalizeAfter?: Date | null;
 
   @ApiPropertyOptional()
   expiresAt?: Date;
@@ -324,6 +330,7 @@ export function toRecoveryRequestDto(
     typedData,
     executionTxHash: entity.executionTxHash,
     failureReason: entity.failureReason,
+    finalizeAfter: entity.finalizeAfter,
     expiresAt: entity.expiresAt,
     createdAt: entity.createdAt,
   });

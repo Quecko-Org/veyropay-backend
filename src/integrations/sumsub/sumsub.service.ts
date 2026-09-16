@@ -1,10 +1,14 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { ProviderException } from '@common/exceptions';
+import { Injectable, Logger } from '@nestjs/common';
 import { SumsubClient } from './sumsub.client';
 import { ISumsubAccessToken, ISumsubApplicant, ISumsubApplicantStatus } from './types';
-import { SUMSUB_LEVEL_NAME, SUMSUB_PROVIDER_NAME } from './constants';
+import { SUMSUB_LEVEL_NAME } from './constants';
 
 // Business modules depend on this service, never on SumsubClient directly.
+//
+// Every method just logs context then rethrows the caught error as-is - SumsubClient
+// already throws ProviderHttpError (the real Sumsub HTTP status + body) for anything
+// that fails, and GlobalExceptionFilter turns that into a proper API response (real
+// status/code, not a blind 502) without this layer needing to re-wrap anything.
 @Injectable()
 export class SumsubService {
   private readonly logger = new Logger(SumsubService.name);
@@ -16,7 +20,7 @@ export class SumsubService {
       return await this.client.createApplicant(externalUserId, SUMSUB_LEVEL_NAME);
     } catch (error) {
       this.logger.warn({ err: error }, 'Sumsub applicant creation failed');
-      throw new ProviderException(SUMSUB_PROVIDER_NAME, 'Unable to start identity verification');
+      throw error;
     }
   }
 
@@ -25,10 +29,7 @@ export class SumsubService {
       return await this.client.generateAccessToken(externalUserId, SUMSUB_LEVEL_NAME);
     } catch (error) {
       this.logger.warn({ err: error }, 'Sumsub access token generation failed');
-      throw new ProviderException(
-        SUMSUB_PROVIDER_NAME,
-        'Unable to start identity verification session',
-      );
+      throw error;
     }
   }
 
@@ -37,11 +38,7 @@ export class SumsubService {
       return await this.client.getApplicantStatus(applicantId);
     } catch (error) {
       this.logger.warn({ err: error }, 'Sumsub status lookup failed');
-      throw new ProviderException(
-        SUMSUB_PROVIDER_NAME,
-        'Unable to fetch verification status',
-        HttpStatus.BAD_GATEWAY,
-      );
+      throw error;
     }
   }
 }

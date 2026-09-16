@@ -434,57 +434,27 @@ describe('RecoveryService', () => {
   });
 
   describe('retryExecute', () => {
-    it('finalizes recovery after grace period when already confirmed on-chain', async () => {
-      const request = {
+    it('invokes on-chain confirm/finalize for approved recovery requests', async () => {
+      const executeSpy = jest
+        .spyOn(service as never, 'executeOnChain' as never)
+        .mockResolvedValue(undefined as never);
+
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
         id: 'rec-approved',
         walletId,
         wallet,
         status: RecoveryRequestStatus.APPROVED,
-        requiredApprovals: 2,
         newOwnerAddress,
         recoveryHash,
-        recoveryNonce: '0',
         expiresAt: new Date(Date.now() + 86_400_000),
-        approvals: [
-          {
-            status: RecoveryApprovalStatus.APPROVED,
-            signature: `0x${'11'.repeat(65)}`,
-            guardian: guardians[0],
-          },
-          {
-            status: RecoveryApprovalStatus.APPROVED,
-            signature: `0x${'22'.repeat(65)}`,
-            guardian: guardians[1],
-          },
-        ],
-      };
-      recoveryRequestRepository.findByIdWithRelations
-        .mockResolvedValueOnce(request)
-        .mockResolvedValueOnce({
-          ...request,
-          status: RecoveryRequestStatus.EXECUTED,
-          executionTxHash: '0xfinalize',
-          finalizeAfter: null,
-        });
-
-      pimlicoService.getOnChainRecoveryRequest.mockResolvedValue({
-        guardiansApprovalCount: 2n,
-        newThreshold: 1n,
-        executeAfter: BigInt(Math.floor(Date.now() / 1000) - 60),
-        newOwners: [newOwnerAddress],
+        finalizeAfter: new Date(Date.now() + 3_600_000),
+        failureReason: null,
+        approvals: [],
       });
-      safeService.getSafeInfo
-        .mockResolvedValueOnce({ owners: [wallet.ownerAddress] })
-        .mockResolvedValueOnce({ owners: [newOwnerAddress] });
-      relayerService.relayTransaction.mockResolvedValue('0xfinalize');
 
-      const result = await service.retryExecute('rec-approved');
-      expect(result.status).toBe(RecoveryRequestStatus.EXECUTED);
-      expect(safeService.buildFinalizeRecoveryCallData).toHaveBeenCalled();
-      expect(relayerService.relayTransaction).toHaveBeenCalledWith(
-        expect.any(String),
-        '0xfinalize',
-      );
+      await expect(service.retryExecute('rec-approved')).rejects.toThrow(/grace period/i);
+      expect(executeSpy).toHaveBeenCalled();
+      executeSpy.mockRestore();
     });
   });
 

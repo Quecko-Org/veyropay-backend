@@ -476,6 +476,12 @@ export class RecoveryService {
       request.status = RecoveryRequestStatus.EXECUTED;
       request.failureReason = null;
       request.finalizeAfter = null;
+      if (!request.executionTxHash) {
+        request.executionTxHash = 'on-chain-owner-verified';
+      }
+      if (!request.executedAt) {
+        request.executedAt = new Date();
+      }
       wallet.ownerAddress = newOwner;
       await this.walletService.save(wallet);
       await this.recoveryRequestRepository.save(request);

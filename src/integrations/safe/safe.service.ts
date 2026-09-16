@@ -1,14 +1,14 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Safe from '@safe-global/protocol-kit';
-import { Address, decodeFunctionResult, Hex } from 'viem';
+import { Address, decodeFunctionResult, getAddress, Hex } from 'viem';
 import { ProviderException } from '@common/exceptions';
 import { ISafeConfig } from '@core/config/safe.config';
 import { ChainRpcClient } from '@integrations/chain-rpc/chain-rpc.client';
 import { SafeClient } from './safe.client';
 import { ISafeCreationInfo, ISafeInfo } from './types';
 import { SAFE_PROVIDER_NAME } from './constants';
-import { buildEnableModulesSetupCallData } from './safe-account.util';
+import { buildEnableModuleCallData, buildEnableModulesSetupCallData } from './safe-account.util';
 import { SOCIAL_RECOVERY_MODULE_ABI } from './social-recovery-module.constant';
 import {
   buildAddGuardianWithThresholdCallData,
@@ -100,12 +100,20 @@ export class SafeService {
 
   // Unsigned {to, value, data} for SafeProxyFactory.createProxyWithNonce(), for use as
   // the tail of a UserOperation's initCode on the Safe's first-ever transaction.
-  async buildDeploymentTransaction(ownerAddress: Address): Promise<ISafeCallData> {
+  // Returns null when the Safe is already on-chain (getCode can lag Protocol Kit).
+  async buildDeploymentTransaction(ownerAddress: Address): Promise<ISafeCallData | null> {
     try {
       const kit = await this.getPredictedKit(ownerAddress);
       const tx = await kit.createSafeDeploymentTransaction();
       return { to: tx.to as Address, value: BigInt(tx.value), data: tx.data as Hex };
     } catch (error) {
+      if (error instanceof Error && /already deployed/i.test(error.message)) {
+        this.logger.log(
+          { ownerAddress },
+          'Safe already deployed - skipping deployment transaction encoding',
+        );
+        return null;
+      }
       this.logger.warn({ err: error }, 'Safe deployment transaction encoding failed');
       throw new ProviderException(
         SAFE_PROVIDER_NAME,
@@ -118,20 +126,45 @@ export class SafeService {
     return this.config.recoveryModuleAddress;
   }
 
+  async isSafeDeployed(safeAddress: Address): Promise<boolean> {
+    try {
+      const code = await this.chainRpcClient.getCode(safeAddress);
+      return Boolean(code) && code !== '0x';
+    } catch (error) {
+      this.logger.warn({ err: error, safeAddress }, 'Safe deployment check failed');
+      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to check Safe deployment state');
+    }
+  }
+
   // Unsigned {to, value, data} for Safe.enableModule() - additive opt-in step, executed
   // as a normal UserOperation through the Safe's own executeUserOp (same path as any
-  // other Safe transaction), not touched by Phase 3's predicted-Safe setup config.
-  // Requires the Safe to already be deployed (Protocol Kit reads current module state
-  // to build this transaction).
+  // other Safe transaction). Works for counterfactual (not-yet-deployed) Safes too:
+  // prepare UserOp attaches factory/factoryData automatically when code is empty.
   async buildEnableRecoveryModuleTransaction(safeAddress: Address): Promise<ISafeCallData> {
-    try {
-      const kit = await this.getDeployedKit(safeAddress);
-      const tx = await kit.createEnableModuleTx(this.config.recoveryModuleAddress);
-      return { to: tx.data.to as Address, value: BigInt(tx.data.value), data: tx.data.data as Hex };
-    } catch (error) {
-      this.logger.warn({ err: error }, 'Enable-module transaction encoding failed');
-      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to build enable-module transaction');
+    const deployed = await this.isSafeDeployed(safeAddress);
+    if (deployed) {
+      try {
+        const kit = await this.getDeployedKit(safeAddress);
+        const tx = await kit.createEnableModuleTx(this.config.recoveryModuleAddress);
+        return {
+          to: tx.data.to as Address,
+          value: BigInt(tx.data.value),
+          data: tx.data.data as Hex,
+        };
+      } catch (error) {
+        this.logger.warn({ err: error }, 'Enable-module transaction encoding failed');
+        throw new ProviderException(
+          SAFE_PROVIDER_NAME,
+          'Unable to build enable-module transaction',
+        );
+      }
     }
+
+    return {
+      to: getAddress(safeAddress),
+      value: 0n,
+      data: buildEnableModuleCallData(this.config.recoveryModuleAddress),
+    };
   }
 
   async isRecoveryModuleEnabled(safeAddress: Address): Promise<boolean> {

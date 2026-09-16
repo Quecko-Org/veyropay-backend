@@ -37,9 +37,18 @@ export class GuardianOnChainRegistrationDto {
   @ApiProperty()
   moduleEnabled!: boolean;
 
+  @ApiProperty({
+    description:
+      'False for brand-new accounts (counterfactual Safe). prepare+execute of enableModule ' +
+      'will deploy the Safe via factory fields, then enable the recovery module.',
+  })
+  safeDeployed!: boolean;
+
   @ApiPropertyOptional({
     type: GuardianCallDataDto,
-    description: 'Submit via POST /wallet/user-operations/prepare then execute (owner-signed)',
+    description:
+      'Submit via POST /wallet/user-operations/prepare then execute (owner-signed). ' +
+      'If safeDeployed is false, prepare attaches Safe factory deployment automatically.',
   })
   enableModule?: GuardianCallDataDto;
 

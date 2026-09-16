@@ -153,8 +153,12 @@ export class WalletService {
       const deploymentTx = await this.safeService.buildDeploymentTransaction(
         wallet.ownerAddress as Address,
       );
-      factory = deploymentTx.to;
-      factoryData = deploymentTx.data;
+      // getCode can briefly lag behind a just-mined deploy; Protocol Kit then reports
+      // "Safe already deployed". Treat that as deployed and omit factory fields.
+      if (deploymentTx) {
+        factory = deploymentTx.to;
+        factoryData = deploymentTx.data;
+      }
     }
     const factoryFields = factory && factoryData ? { factory, factoryData } : {};
 

@@ -28,6 +28,18 @@ export const SAFE_MODULE_SETUP_ABI = [
   },
 ] as const;
 
+// Safe Singleton enableModule - used for post-setup SocialRecoveryModule opt-in.
+// Encoded as a self-call via executeUserOp(to=safe, data=enableModule(module)).
+export const SAFE_ENABLE_MODULE_ABI = [
+  {
+    type: 'function',
+    name: 'enableModule',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'module', type: 'address' }],
+    outputs: [],
+  },
+] as const;
+
 // Entry point through which the EntryPoint (via the 4337 module as fallback
 // handler) executes the account's intended call during UserOperation execution.
 // Protocol Kit has no ERC-4337 awareness (that's @safe-global/relay-kit), so this

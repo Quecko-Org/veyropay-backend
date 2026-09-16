@@ -1,5 +1,6 @@
 import { Address } from 'viem';
 import {
+  buildEnableModuleCallData,
   buildEnableModulesSetupCallData,
   buildExecuteUserOpCallData,
   buildGetNonceCallData,
@@ -16,6 +17,15 @@ describe('safe-account.util', () => {
       // enableModules(address[]) selector, verified against the compiled
       // ModuleManager ABI - see contracts.constant.ts sourcing notes.
       expect(calldata.startsWith('0x8d0dc49f')).toBe(true);
+      expect(calldata).toContain(module4337.slice(2).toLowerCase());
+    });
+  });
+
+  describe('buildEnableModuleCallData', () => {
+    it('encodes Safe.enableModule for a single module address', () => {
+      const calldata = buildEnableModuleCallData(module4337);
+      // enableModule(address) selector
+      expect(calldata.startsWith('0x610b5925')).toBe(true);
       expect(calldata).toContain(module4337.slice(2).toLowerCase());
     });
   });

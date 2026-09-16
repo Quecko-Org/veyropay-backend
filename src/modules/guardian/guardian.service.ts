@@ -21,10 +21,15 @@ import { InviteGuardianDto } from './dto/invite-guardian.dto';
 import {
   GuardianResponseDto,
   GuardianUserCardDto,
+  toClientStatus,
   toGuardianResponse,
   toUserCard,
 } from './dto/guardian-response.dto';
 import { GuardianOnChainRegistrationDto } from './dto/guardian-on-chain-registration.dto';
+import {
+  GuardianOnChainStatusDto,
+  GuardianOnChainStatusItemDto,
+} from './dto/guardian-on-chain-status.dto';
 import { GuardianEntity } from './entities/guardian.entity';
 import { GuardianRepository } from './repositories/guardian.repository';
 import { resolveRequiredApprovals } from '@modules/recovery/dto/recovery-response.dto';
@@ -161,6 +166,86 @@ export class GuardianService {
     return this.toGuardianResponses(rows);
   }
 
+  /**
+   * Compares accepted recovery guardians in the app/DB against SocialRecoveryModule.isGuardian.
+   * Public via walletId (same pattern as recovery list/lookup).
+   */
+  async getOnChainStatus(walletId: string): Promise<GuardianOnChainStatusDto> {
+    const wallet = await this.walletService.getById(walletId);
+    const active = await this.guardianRepository.findActiveApproversForWallet(wallet.id);
+
+    if (!wallet.smartAccountAddress) {
+      return new GuardianOnChainStatusDto({
+        safeDeployed: false,
+        moduleEnabled: false,
+        approvedInApp: active.length,
+        registeredOnChain: 0,
+        readyForRecovery: false,
+        guardians: active.map((g) => this.toOnChainStatusItem(g, false)),
+      });
+    }
+
+    const safeAddress = getAddress(wallet.smartAccountAddress);
+    const safeDeployed = await this.safeService.isSafeDeployed(safeAddress);
+
+    let moduleEnabled = false;
+    if (safeDeployed) {
+      try {
+        moduleEnabled = await this.safeService.isRecoveryModuleEnabled(safeAddress);
+      } catch {
+        moduleEnabled = false;
+      }
+    }
+
+    const canQueryModule = safeDeployed && moduleEnabled;
+    const guardians: GuardianOnChainStatusItemDto[] = [];
+    let registeredOnChain = 0;
+
+    for (const guardian of active) {
+      let onChainRegistered = false;
+      if (canQueryModule && guardian.guardianAddress) {
+        try {
+          onChainRegistered = await this.safeService.isRecoveryGuardian(
+            safeAddress,
+            getAddress(guardian.guardianAddress),
+          );
+        } catch {
+          onChainRegistered = false;
+        }
+      }
+      if (onChainRegistered) {
+        registeredOnChain += 1;
+      }
+      guardians.push(this.toOnChainStatusItem(guardian, onChainRegistered));
+    }
+
+    const approvedInApp = active.length;
+    return new GuardianOnChainStatusDto({
+      safeAddress,
+      safeDeployed,
+      moduleEnabled,
+      approvedInApp,
+      registeredOnChain,
+      readyForRecovery: approvedInApp > 0 && registeredOnChain === approvedInApp,
+      guardians,
+    });
+  }
+
+  private toOnChainStatusItem(
+    guardian: GuardianEntity,
+    onChainRegistered: boolean,
+  ): GuardianOnChainStatusItemDto {
+    return new GuardianOnChainStatusItemDto({
+      id: guardian.id,
+      email: guardian.guardianEmail,
+      displayName: guardian.guardianName ?? guardian.guardianUser?.displayName,
+      status: toClientStatus(guardian.status),
+      canApproveRecovery: guardian.canApproveRecovery,
+      guardianAddress: guardian.guardianAddress ?? undefined,
+      onChainRegistered,
+    });
+  }
+
   async accept(callerId: string, id: string): Promise<GuardianResponseDto> {
     const guardian = await this.requireIncomingInvite(callerId, id);
     const inviteeWallet = await this.walletService.findByUserId(callerId);
@@ -205,25 +290,30 @@ export class GuardianService {
 
     const safeAddress = getAddress(wallet.smartAccountAddress);
     const guardianAddress = getAddress(guardian.guardianAddress);
+    const safeDeployed = await this.safeService.isSafeDeployed(safeAddress);
+
     const active = await this.guardianRepository.findActiveApproversForWallet(wallet.id);
     const desiredThreshold = resolveRequiredApprovals(active.length, wallet.guardianThreshold);
 
     let moduleEnabled = false;
-    try {
-      moduleEnabled = await this.safeService.isRecoveryModuleEnabled(safeAddress);
-    } catch {
-      moduleEnabled = false;
-    }
-
-    // Module requires threshold <= count after add. Use on-chain count (not DB) so the
-    // first registration cannot encode threshold 2 while guardiansCount is still 0.
     let onChainGuardiansCount = 0;
-    if (moduleEnabled) {
-      onChainGuardiansCount = await this.safeService.getGuardiansCount(safeAddress);
-      if (await this.safeService.isRecoveryGuardian(safeAddress, guardianAddress)) {
-        throw new ConflictException('Guardian is already registered on-chain');
+    if (safeDeployed) {
+      try {
+        moduleEnabled = await this.safeService.isRecoveryModuleEnabled(safeAddress);
+      } catch {
+        moduleEnabled = false;
+      }
+
+      // Module requires threshold <= count after add. Use on-chain count (not DB) so the
+      // first registration cannot encode threshold 2 while guardiansCount is still 0.
+      if (moduleEnabled) {
+        onChainGuardiansCount = await this.safeService.getGuardiansCount(safeAddress);
+        if (await this.safeService.isRecoveryGuardian(safeAddress, guardianAddress)) {
+          throw new ConflictException('Guardian is already registered on-chain');
+        }
       }
     }
+
     const threshold = resolveAddGuardianThreshold(desiredThreshold, onChainGuardiansCount);
 
     const moduleAddress = this.safeService.getRecoveryModuleAddress();
@@ -236,6 +326,7 @@ export class GuardianService {
       recoveryModuleAddress: moduleAddress,
       threshold,
       moduleEnabled,
+      safeDeployed,
       addGuardian: {
         to: moduleAddress,
         value: '0',

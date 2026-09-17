@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException,ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import ms from 'ms';
@@ -56,6 +56,19 @@ export class AuthService {
   // then submits the resulting session JWT to POST /auth/login, same as any other
   // login. See docs.turnkey.com/authentication/backend-authentication ("Signup flow").
   async signup(dto: SignupDto): Promise<SignupResultDto> {
+    // Prevent a second account/wallet for an email already registered under a
+    // different login method (e.g. signed up with Google/Apple already) - see
+    // ProfileService.findByEmail for the full caveat (doesn't catch a hidden Apple
+    // email).
+ if (dto.userEmail) {
+    const existingUser = await this.profileService.findByEmail(dto.userEmail);
+    if (existingUser) {
+      throw new ConflictException(
+        'An account already exists with this email. Please log in instead of signing up again.',
+      );
+    }
+  }
+
     const result = await this.turnkeyService.provisionSubOrganization({
       subOrganizationName: `${dto.userName}'s organization`,
       rootUsers: [
@@ -98,12 +111,30 @@ export class AuthService {
   // See docs.turnkey.com/features/authentication/social-logins.
   async oauthLogin(dto: OauthLoginDto): Promise<OauthLoginResultDto> {
     let organizationId = await this.turnkeyService.findSubOrganizationByOidcToken(dto.oidcToken);
+
     if (!organizationId) {
+      // Prevent a second account/wallet for an email already registered under a
+      // different login method - findSubOrganizationByOidcToken only matches within
+      // the SAME provider's token, so signing up with Google then later trying Apple
+      // (or passkey) with the identical email would otherwise silently provision a
+      // second Turnkey sub-organization and a second, unrelated Safe wallet. Doesn't
+      // catch an Apple sign-in with a hidden/private-relay email - see
+      // ProfileService.findByEmail.
+      if (dto.userEmail) {
+        const existingUser = await this.profileService.findByEmail(dto.userEmail);
+        if (existingUser) {
+          throw new ConflictException(
+            'An account already exists with this email. Please log in using the method ' +
+              'you originally signed up with.',
+          );
+        }
+      }
+
       const result = await this.turnkeyService.provisionSubOrganization({
         subOrganizationName: `${dto.userName ?? dto.providerName} organization`,
         rootUsers: [
           {
-            userName: dto.userName ?? dto.userEmail,
+            userName: dto.userName ?? dto.providerName,
             userEmail: dto.userEmail,
             apiKeys: [],
             authenticators: [],
@@ -124,6 +155,7 @@ export class AuthService {
       oidcToken: dto.oidcToken,
       publicKey: dto.apiPublicKey,
     });
+
     return new OauthLoginResultDto({ sessionJwt: loginResult.session });
   }
 
@@ -202,6 +234,7 @@ export class AuthService {
     const identity = await this.turnkeyService.verifySessionToken(dto.sessionJwt);
 
     const user = await this.profileService.findOrCreateByTurnkeyUserId(identity.userId, dto.email);
+
     // Persisted so smart account provisioning can look up the user's Turnkey
     // sub-organization later without requiring the client to resend it.
     await this.profileService.setProviderReference(
@@ -209,6 +242,7 @@ export class AuthService {
       TURNKEY_ORGANIZATION_PROVIDER_KEY,
       identity.organizationId,
     );
+
     // Wallet creation is automatic and transparent per docs/02_PRODUCT_REQUIREMENTS.md,
     // even though the on-chain smart account provider is still pending a decision.
     await this.walletService.getOrCreatePendingWallet(user.id);
@@ -236,7 +270,6 @@ export class AuthService {
 
     return this.issueTokens(user.id, session.id);
   }
-
   // Local-only shortcut for Swagger/curl testing without Turnkey/passkeys.
   // Creates (or reuses) a user + pending wallet, then issues a normal app JWT.
   async devLogin(dto: DevLoginDto, meta: IRequestMetadata): Promise<AuthTokensDto> {

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
 import { IProviderConfig } from '@shared/interfaces';
+import { ProviderHttpError } from '@common/utils';
 import { ISumsubAccessToken, ISumsubApplicant, ISumsubApplicantStatus } from './types';
 
 // Thin HTTP client wrapper around the Sumsub API.
@@ -63,7 +64,12 @@ export class SumsubClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Sumsub request failed with status ${response.status}`);
+        const errorBody = await response.text();
+        throw new ProviderHttpError(
+          `Sumsub request failed with status ${response.status}: ${errorBody}`,
+          response.status,
+          errorBody,
+        );
       }
 
       return (await response.json()) as T;

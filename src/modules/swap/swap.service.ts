@@ -65,48 +65,48 @@ export class SwapService {
 
   async previewQuote(dto: PreviewSwapDto) {
     console.log(' previewQuotedto', dto);
-try{
-    if (dto.fromChain === dto.toChain) {
-      console.log('oneinch');
-    
-      const response = await this.oneinchService.getSwapTransaction({
-        chainId: Number(dto.fromChain),
-        src: dto.fromAsset,
-        dst: dto.toAsset,
-        amount: dto.amount,
-        from: dto.fromAddress,
-        slippage: dto.slippage ?? 1,
+    try {
+      if (dto.fromChain === dto.toChain) {
+        console.log('oneinch');
+
+        const response = await this.oneinchService.getSwapTransaction({
+          chainId: Number(dto.fromChain),
+          src: dto.fromAsset,
+          dst: dto.toAsset,
+          amount: dto.amount,
+          from: dto.fromAddress,
+          slippage: dto.slippage ?? 1,
+        });
+
+        // Unlike LiFi's feeCosts, 1inch never reports its own referrer-fee deduction as
+        // a separate line item - it's baked directly into dstAmount. We set the
+        // percentage ourselves (swapFeeConfig), so back-compute what was taken rather
+        // than leaving the client with no fee figure at all for a same-chain swap.
+        return { ...response, estimatedFee: this.estimateOneinchFee(response.dstAmount) };
+
+
+      }
+
+      return this.lifiService.getQuote({
+        fromChain: dto.fromChain,
+        toChain: dto.toChain,
+        fromToken: dto.fromAsset,
+        toToken: dto.toAsset,
+        fromAmount: dto.amount,
+        fromAddress: dto.fromAddress,
       });
 
-      // Unlike LiFi's feeCosts, 1inch never reports its own referrer-fee deduction as
-      // a separate line item - it's baked directly into dstAmount. We set the
-      // percentage ourselves (swapFeeConfig), so back-compute what was taken rather
-      // than leaving the client with no fee figure at all for a same-chain swap.
-      return { ...response, estimatedFee: this.estimateOneinchFee(response.dstAmount) };
-
-
+    } catch (error) {
+      if (error instanceof ProviderHttpError && (error.body?.includes('NO_POSSIBLE_ROUTE') || error.body?.includes('No available quotes'))) {
+        throw new BadRequestException(
+          'This amount is too small to find a cross-chain route - try a larger amount.',
+        );
+      }
+      throw error;
     }
-
-    return this.lifiService.getQuote({
-      fromChain: dto.fromChain,
-      toChain: dto.toChain,
-      fromToken: dto.fromAsset,
-      toToken: dto.toAsset,
-      fromAmount: dto.amount,
-      fromAddress: dto.fromAddress,
-    });
-
-  }catch(error){
-    if (error instanceof ProviderHttpError && (error.body?.includes('NO_POSSIBLE_ROUTE') || error.body?.includes('No available quotes'))) {
-      throw new BadRequestException(
-        'This amount is too small to find a cross-chain route - try a larger amount.',
-      );
-    }
-    throw error;
-  }
   }
 
-    // dstAmount already has the fee removed (1inch applies it internally via the
+  // dstAmount already has the fee removed (1inch applies it internally via the
   // fee/referrer params - see OneinchClient.applySwapFee), so the pre-fee amount was
   // dstAmount / (1 - pct/100), and the fee is the difference. Same condition as
   // applySwapFee - only meaningful when both a percentage AND a recipient are actually
@@ -133,14 +133,14 @@ try{
   // source; skip it entirely for a native-ETH source (no approval concept applies).
   async checkApproval(dto: CheckSwapApprovalDto): Promise<ICheckApprovalResult> {
     const isCrossChain = dto.fromChain !== dto.toChain;
-console.log("approval",dto)
+    console.log("approval", dto)
     if (!isCrossChain) {
       const { allowance } = await this.oneinchService.getAllowance(
         Number(dto.fromChain),
         dto.tokenAddress,
         dto.ownerAddress,
       );
-      console.log('allowance', allowance,BigInt(allowance) >= BigInt(dto.amount));
+      console.log('allowance', allowance, BigInt(allowance) >= BigInt(dto.amount));
 
       if (BigInt(allowance) >= BigInt(dto.amount)) {
         return { needsApproval: false };
@@ -158,7 +158,7 @@ console.log("approval",dto)
     if (!dto.spenderAddress) {
       throw new BadRequestException(
         'spenderAddress is required for a cross-chain approval check - use the ' +
-          "preview response's estimate.approvalAddress",
+        "preview response's estimate.approvalAddress",
       );
     }
 
@@ -192,7 +192,9 @@ console.log("approval",dto)
       walletId: wallet.id,
       type: TransactionType.SWAP,
       chain: dto.toChain,
-      asset: dto.toAsset, 
+      asset: dto.toAsset,
+      fromChain:dto.fromChain,
+      fromAsset:dto.fromAsset,
       amount: dto.amount,
       fee: dto.fee,
       provider: isCrossChain ? 'lifi' : 'oneinch',
@@ -201,7 +203,7 @@ console.log("approval",dto)
     try {
       const userOpHash = await this.pimlicoService.submitUserOperation(dto.signedUserOperation);
       const submitted = await this.transactionService.recordSubmitted(transaction.id, userOpHash);
-console.log("submitted",submitted)
+      console.log("submitted", submitted)
       void this.finalizeOnceReceiptKnown(transaction.id, userId, userOpHash, dto);
 
       return submitted;
@@ -257,9 +259,12 @@ console.log("submitted",submitted)
       );
 
       if (bridgeStatus?.status === 'DONE') {
+        // LiFi's own status API reports the real amount that actually arrived on the
+        // destination chain - overrides the quoted estimate recorded at execute() time.
         await this.transactionService.markConfirmed(
           transactionId,
           bridgeStatus.receiving?.txHash ?? receipt.transactionHash,
+          bridgeStatus.receiving?.amount,
         );
         await this.notificationService.notify(
           userId,

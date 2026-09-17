@@ -12,7 +12,8 @@ import { GlobalExceptionFilter } from '@common/filters';
 import { ResponseInterceptor } from '@common/interceptors';
 import { IntegrationsModule } from '@integrations/integrations.module';
 import { ModulesModule } from '@modules/modules.module';
-
+import { ScheduleModule } from '@nestjs/schedule';
+ 
 @Module({
   imports: [
     ConfigModule,
@@ -29,6 +30,8 @@ import { ModulesModule } from '@modules/modules.module';
     MonitoringModule,
     IntegrationsModule,
     ModulesModule,
+        ScheduleModule.forRoot()
+    
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

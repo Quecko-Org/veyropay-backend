@@ -14,6 +14,7 @@ import { NotificationModule } from './notification/notification.module';
 import { SystemModule } from './system/system.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AssetsModule } from './assests/assets.module';
+import { DepositScannerModule } from './deposit-scanner/deposit-scanner.module';
 
 // Aggregates every business module so app.module.ts only imports this one module.
 @Module({
@@ -32,6 +33,7 @@ import { AssetsModule } from './assests/assets.module';
     NotificationModule,
     SystemModule,
     WebhooksModule,
+    DepositScannerModule
   ],
 })
 export class ModulesModule {}

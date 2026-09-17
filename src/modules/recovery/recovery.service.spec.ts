@@ -127,7 +127,7 @@ describe('RecoveryService', () => {
     getRecoveryModuleAddress: jest.Mock;
     buildMultiConfirmRecoveryCallData: jest.Mock;
     buildFinalizeRecoveryCallData: jest.Mock;
-    getSafeInfo: jest.Mock;
+    getSafeOwners: jest.Mock;
   };
   let turnkeyService: {
     verifySessionToken: jest.Mock;
@@ -191,7 +191,7 @@ describe('RecoveryService', () => {
         .mockReturnValue('0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897'),
       buildMultiConfirmRecoveryCallData: jest.fn().mockReturnValue('0xdead'),
       buildFinalizeRecoveryCallData: jest.fn().mockReturnValue('0xfinalize'),
-      getSafeInfo: jest.fn().mockResolvedValue({ owners: [wallet.ownerAddress] }),
+      getSafeOwners: jest.fn().mockResolvedValue([wallet.ownerAddress]),
     };
     turnkeyService = {
       verifySessionToken: jest.fn().mockResolvedValue({
@@ -392,9 +392,9 @@ describe('RecoveryService', () => {
           executeAfter: BigInt(Math.floor(Date.now() / 1000) - 10),
           newOwners: [newOwnerAddress],
         });
-      safeService.getSafeInfo
-        .mockResolvedValueOnce({ owners: [wallet.ownerAddress] })
-        .mockResolvedValueOnce({ owners: [newOwnerAddress] });
+      safeService.getSafeOwners
+        .mockResolvedValueOnce([wallet.ownerAddress])
+        .mockResolvedValueOnce([newOwnerAddress]);
       relayerService.relayTransaction
         .mockResolvedValueOnce('0xconfirm')
         .mockResolvedValueOnce('0xfinalize');
@@ -506,7 +506,7 @@ describe('RecoveryService', () => {
 
       expect(turnkeyService.verifySessionToken).toHaveBeenCalledWith('jwt');
       expect(turnkeyService.organizationControlsAddress).toHaveBeenCalled();
-      expect(safeService.getSafeInfo).toHaveBeenCalled();
+      expect(safeService.getSafeOwners).toHaveBeenCalled();
       expect(profileService.rebindTurnkeyIdentity).toHaveBeenCalledWith(ownerId, 'tk-new');
       expect(authService.openSessionForUser).toHaveBeenCalledWith(
         ownerId,

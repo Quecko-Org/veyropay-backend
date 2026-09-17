@@ -375,6 +375,24 @@ describe('RecoveryService', () => {
         },
       };
       recoveryApprovalRepository.findByIdWithRelations.mockResolvedValue(approval);
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        ...approval.recoveryRequest,
+        status: RecoveryRequestStatus.APPROVED,
+        approvals: [
+          {
+            id: 'apr-g-1',
+            status: RecoveryApprovalStatus.APPROVED,
+            signature: `0x${'11'.repeat(65)}`,
+            guardian: guardians[0],
+          },
+          {
+            id: 'apr-g-2',
+            status: RecoveryApprovalStatus.APPROVED,
+            signature,
+            guardian: guardians[1],
+          },
+        ],
+      });
       profileService.getById.mockResolvedValue({
         id: 'guardian-user-2',
         email: 'sofie@example.com',
@@ -499,6 +517,7 @@ describe('RecoveryService', () => {
         newOwnerAddress,
         approvals: [],
       });
+      safeService.getSafeOwners.mockResolvedValue([newOwnerAddress]);
 
       const tokens = await service.claim(
         'rec-1',

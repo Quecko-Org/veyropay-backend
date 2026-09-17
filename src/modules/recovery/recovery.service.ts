@@ -260,8 +260,20 @@ export class RecoveryService {
   }
 
   async retryExecute(id: string): Promise<RecoveryRequestDto> {
-    const request = await this.recoveryRequestRepository.findByIdWithRelations(id);
+    let request = await this.recoveryRequestRepository.findByIdWithRelations(id);
     if (!request) {
+      let walletExists = false;
+      try {
+        await this.walletService.getById(id);
+        walletExists = true;
+      } catch {
+        walletExists = false;
+      }
+      if (walletExists) {
+        throw new NotFoundException(
+          'Recovery request not found — use recovery request id from GET /recovery/requests, not walletId',
+        );
+      }
       throw new NotFoundException('Recovery request not found');
     }
 
@@ -481,6 +493,16 @@ export class RecoveryService {
   }
 
   private async executeOnChain(request: RecoveryRequestEntity): Promise<void> {
+    // decide() loads approvals without guardian nested — merge a fresh load before relay.
+    const hydrated = await this.recoveryRequestRepository.findByIdWithRelations(request.id);
+    if (!hydrated) {
+      request.failureReason = 'Recovery request not found during on-chain execution';
+      await this.recoveryRequestRepository.save(request);
+      return;
+    }
+    request.approvals = hydrated.approvals;
+    request.wallet = hydrated.wallet ?? request.wallet;
+
     const wallet = request.wallet ?? (await this.walletService.getById(request.walletId));
     if (!wallet.smartAccountAddress || !request.recoveryHash) {
       request.failureReason = 'Missing smart account or recovery hash';

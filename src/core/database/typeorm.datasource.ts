@@ -1,7 +1,14 @@
 import { config as loadEnv } from 'dotenv';
-
-loadEnv({ path: process.env.ENV_FILE ?? '.env' });
+import { existsSync } from 'fs';
 import { DataSource } from 'typeorm';
+
+// Docker/CI passes env via --env-file; only load a file when vars are not already set.
+if (!process.env.DATABASE_HOST) {
+  const envPath = process.env.ENV_FILE ?? '.env';
+  if (existsSync(envPath)) {
+    loadEnv({ path: envPath });
+  }
+}
 
 // Standalone DataSource used exclusively by the TypeORM CLI for generating,
 // running, and reverting migrations outside of the Nest application context.

@@ -34,8 +34,6 @@ export class WalletController {
     return this.walletService.prepareUserOperation(user.sub, dto);
   }
 
-
-
   @Get('transactions')
   @ApiOperation({
     summary:

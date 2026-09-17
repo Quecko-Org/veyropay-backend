@@ -88,6 +88,10 @@ export class WalletService {
     return wallet;
   }
 
+  async save(wallet: WalletEntity): Promise<WalletEntity> {
+    return this.walletRepository.save(wallet);
+  }
+
   async requestSmartAccountProvisioning(userId: string): Promise<WalletEntity> {
     const wallet = await this.getByUserId(userId);
 
@@ -156,8 +160,12 @@ export class WalletService {
       const deploymentTx = await this.safeService.buildDeploymentTransaction(
         wallet.ownerAddress as Address,
       );
-      factory = deploymentTx.to;
-      factoryData = deploymentTx.data;
+      // getCode can briefly lag behind a just-mined deploy; Protocol Kit then reports
+      // "Safe already deployed". Treat that as deployed and omit factory fields.
+      if (deploymentTx) {
+        factory = deploymentTx.to;
+        factoryData = deploymentTx.data;
+      }
     }
     const factoryFields = factory && factoryData ? { factory, factoryData } : {};
 
@@ -171,7 +179,7 @@ export class WalletService {
     // account - exactly the case sponsored lazy deployment exists for - can never
     // satisfy that, so a plain unsponsored estimate can't be the primary path here.
     // PimlicoService.sponsorUserOperation returns null (not a throw) on decline/failure.
-    const sponsorshipAttempt = await this.pimlicoService.sponsorUserOperation(
+    const sponsorshipResponse = await this.pimlicoService.sponsorUserOperation(
       {
         sender,
         nonce: `0x${nonce.toString(16)}`,
@@ -186,6 +194,7 @@ export class WalletService {
       },
       DEFAULT_ENTRY_POINT,
     );
+    const sponsorshipAttempt = sponsorshipResponse.result;
 
     let gasEstimate: Record<string, string>;
     let sponsorship: typeof sponsorshipAttempt = null;
@@ -233,19 +242,29 @@ export class WalletService {
         // Sponsorship was declined and the sender can't cover its own prefund either
         // (EntryPoint's AA21 revert) - same outcome as the balance check below, just
         // discovered earlier, during simulation instead of a separate balance query.
+        const policyHint = sponsorshipResponse.declineReason
+          ? ` Pimlico: ${sponsorshipResponse.declineReason}. Check sponsorship policy ` +
+            '(Base Sepolia enabled, webhook off, no contract restrictions) or fund the Safe with Sepolia ETH.'
+          : '';
         throw new ConflictException(
           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
-          'wallet does not have enough balance to cover this transaction.',
+            'wallet does not have enough balance to cover this transaction.' +
+            policyHint,
         );
       }
     }
 
     const callGasLimit = sponsorship?.callGasLimit ?? gasEstimate.callGasLimit;
+    // When Pimlico sponsors, paymasterData is bound to the exact gas limits from
+    // pm_sponsorUserOperation. Bumping verificationGasLimit after that invalidates
+    // the paymaster signature and breaks execution. Only apply a buffer on the
+    // unsponsored fallback path.
     const rawVerificationGasLimit = BigInt(
       sponsorship?.verificationGasLimit ?? gasEstimate.verificationGasLimit,
     );
-    const verificationGasLimit = `0x${((rawVerificationGasLimit * 120n) / 100n).toString(16)}`;
-
+    const verificationGasLimit = sponsorship
+      ? `0x${rawVerificationGasLimit.toString(16)}`
+      : `0x${((rawVerificationGasLimit * 120n) / 100n).toString(16)}`;
 
     const preVerificationGas = sponsorship?.preVerificationGas ?? gasEstimate.preVerificationGas;
 
@@ -304,15 +323,14 @@ export class WalletService {
         : {}),
     });
   }
-
-  private async validateTransferBalance(
+private async validateTransferBalance(
     sender: Address,
     dto: PrepareUserOperationDto,
   ): Promise<void> {
     if (!dto.tokenAddress) {
       const amount = BigInt(dto.value ?? '0');
       const balance = await this.pimlicoService.getNativeBalance(sender);
-      console.log("asharamount balance", amount, balance)
+      console.log("amount balance of sender is ",amount ,balance,sender)
       if (balance < amount) {
         throw new ConflictException('Insufficient balance for transfer');
       }

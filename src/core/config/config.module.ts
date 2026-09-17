@@ -20,7 +20,7 @@ import { envValidationSchema } from './env.validation';
   imports: [
     NestConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env'],
+      envFilePath: [process.env.ENV_FILE ?? '.env'],
       validationSchema: envValidationSchema,
       validationOptions: {
         abortEarly: false,

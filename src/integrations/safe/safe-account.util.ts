@@ -2,6 +2,7 @@ import { Address, encodeFunctionData, Hex } from 'viem';
 import {
   ENTRY_POINT_GET_NONCE_ABI,
   SAFE_4337_EXECUTE_USER_OP_ABI,
+  SAFE_ENABLE_MODULE_ABI,
   SAFE_MODULE_SETUP_ABI,
   SAFE_OPERATION_CALL,
 } from './contracts.constant';
@@ -21,6 +22,17 @@ export function buildEnableModulesSetupCallData(module4337Address: Address): Hex
     abi: SAFE_MODULE_SETUP_ABI,
     functionName: 'enableModules',
     args: [[module4337Address]],
+  });
+}
+
+// Safe.enableModule(module) self-call payload. Used when the Safe is not yet deployed
+// (Protocol Kit cannot createEnableModuleTx without on-chain state) so the first
+// sponsored UserOp can deploy + enable SocialRecoveryModule via prepare's factory fields.
+export function buildEnableModuleCallData(moduleAddress: Address): Hex {
+  return encodeFunctionData({
+    abi: SAFE_ENABLE_MODULE_ABI,
+    functionName: 'enableModule',
+    args: [moduleAddress],
   });
 }
 

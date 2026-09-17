@@ -6,3 +6,7 @@ export * from './signup-result.dto';
 export * from './oauth-login.dto';
 export * from './oauth-login-result.dto';
 export * from './dev-login.dto';
+export * from './init-email-recovery.dto';
+export * from './init-email-recovery-result.dto';
+export * from './complete-email-recovery.dto';
+export * from './complete-email-recovery-result.dto';

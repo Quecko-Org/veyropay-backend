@@ -1,1 +1,3 @@
 export const MAX_GUARDIANS = 3;
+export const GUARDIAN_PUBLIC_THROTTLE_LIMIT = 20;
+export const GUARDIAN_PUBLIC_THROTTLE_TTL_MS = 60_000;

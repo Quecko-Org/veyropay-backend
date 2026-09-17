@@ -1,5 +1,14 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { JwtAuthGuard } from '@common/guards';
 import { CurrentUser } from '@common/decorators';
@@ -13,6 +22,11 @@ import { SignupResultDto } from './dto/signup-result.dto';
 import { OauthLoginDto } from './dto/oauth-login.dto';
 import { OauthLoginResultDto } from './dto/oauth-login-result.dto';
 import { DevLoginDto } from './dto/dev-login.dto';
+import { InitEmailRecoveryDto } from './dto/init-email-recovery.dto';
+import { InitEmailRecoveryResultDto } from './dto/init-email-recovery-result.dto';
+import { CompleteEmailRecoveryDto } from './dto/complete-email-recovery.dto';
+import { CompleteEmailRecoveryResultDto } from './dto/complete-email-recovery-result.dto';
+import { AUTH_RECOVERY_THROTTLE_LIMIT, AUTH_RECOVERY_THROTTLE_TTL_MS } from './constants';
 
 @ApiTags('auth')
 @Controller({ path: 'auth', version: '1' })
@@ -49,6 +63,40 @@ export class AuthController {
   })
   devLogin(@Body() dto: DevLoginDto, @Req() req: Request): Promise<AuthTokensDto> {
     return this.authService.devLogin(dto, { ipAddress: req.ip });
+  }
+
+  @Post('recover/init')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: AUTH_RECOVERY_THROTTLE_LIMIT, ttl: AUTH_RECOVERY_THROTTLE_TTL_MS },
+  })
+  @ApiOperation({
+    summary: 'Start Turnkey email recovery (lost passkey / device)',
+    description:
+      'Looks up the Turnkey sub-organization for this email and asks Turnkey to send a ' +
+      'recovery credential encrypted to targetPublicKey. Returns userId + organizationId ' +
+      'for POST /auth/recover/complete. Does not change Safe ownership (use /recovery for ' +
+      'guardian social recovery).',
+  })
+  initEmailRecovery(@Body() dto: InitEmailRecoveryDto): Promise<InitEmailRecoveryResultDto> {
+    return this.authService.initEmailRecovery(dto);
+  }
+
+  @Post('recover/complete')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: AUTH_RECOVERY_THROTTLE_LIMIT, ttl: AUTH_RECOVERY_THROTTLE_TTL_MS },
+  })
+  @ApiOperation({
+    summary: 'Complete Turnkey email recovery by registering a new passkey',
+    description:
+      'Relays the client-stamped recover_user activity to Turnkey. After success, call ' +
+      'Turnkey stampLogin() then POST /auth/login. Existing device sessions are revoked.',
+  })
+  completeEmailRecovery(
+    @Body() dto: CompleteEmailRecoveryDto,
+  ): Promise<CompleteEmailRecoveryResultDto> {
+    return this.authService.completeEmailRecovery(dto);
   }
 
   @Post('login')

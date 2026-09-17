@@ -145,14 +145,7 @@ export class TurnkeyService {
   // Returns the first Ethereum address already provisioned for the user's Turnkey
   // sub-organization - this becomes the sole owner of the user's Safe smart account.
   async getPrimarySignerAddress(organizationId: string): Promise<string> {
-    let response: ITurnkeyWalletAccountsResponse;
-
-    try {
-      response = await this.client.getWalletAccounts(organizationId);
-    } catch (error) {
-      this.logger.warn({ err: error }, 'Turnkey wallet account lookup failed');
-      throw new ProviderException(TURNKEY_PROVIDER_NAME, 'Unable to fetch Turnkey wallet accounts');
-    }
+    const response = await this.listWalletAccounts(organizationId);
 
     const ethereumAccount = response.accounts.find(
       (account) => account.addressFormat === 'ADDRESS_FORMAT_ETHEREUM',
@@ -167,5 +160,26 @@ export class TurnkeyService {
     }
 
     return ethereumAccount.address;
+  }
+
+  async listWalletAccounts(organizationId: string): Promise<ITurnkeyWalletAccountsResponse> {
+    try {
+      return await this.client.getWalletAccounts(organizationId);
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Turnkey wallet account lookup failed');
+      throw new ProviderException(TURNKEY_PROVIDER_NAME, 'Unable to fetch Turnkey wallet accounts');
+    }
+  }
+
+  // True when the Turnkey sub-org holds an Ethereum account equal to `address`
+  // (checksum-insensitive). Used to prove a session controls recovery newOwnerAddress.
+  async organizationControlsAddress(organizationId: string, address: string): Promise<boolean> {
+    const normalized = address.trim().toLowerCase();
+    const response = await this.listWalletAccounts(organizationId);
+    return response.accounts.some(
+      (account) =>
+        account.addressFormat === 'ADDRESS_FORMAT_ETHEREUM' &&
+        account.address.trim().toLowerCase() === normalized,
+    );
   }
 }

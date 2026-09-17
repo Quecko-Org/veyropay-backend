@@ -98,9 +98,19 @@ export const envValidationSchema = Joi.object({
   SENDGRID_RECOVERY_COMPLETED_TEMPLATE_ID: Joi.string().allow('').optional(),
 
   // Relayer (guardian recovery gas sponsorship - submits SocialRecoveryModule
-  // transactions on behalf of guardians/users, who never pay gas themselves)
-  RELAYER_PRIVATE_KEY: Joi.string().required(),
+  // transactions on behalf of guardians/users, who never pay gas themselves).
+  // Must be a 32-byte hex EOA key: 0x + 64 hex chars (or 64 hex without prefix).
+  RELAYER_PRIVATE_KEY: Joi.string()
+    .pattern(/^(0x)?[0-9a-fA-F]{64}$/)
+    .required()
+    .messages({
+      'string.pattern.base':
+        'RELAYER_PRIVATE_KEY must be a 32-byte hex private key (0x + 64 hex characters)',
+    }),
   RELAYER_CHAIN_ID: Joi.number().default(8453),
+
+  // Wallet / recovery chain (8453 Base mainnet, 84532 Base Sepolia testnet)
+  WALLET_CHAIN_ID: Joi.number().default(8453),
 
   // Safe SocialRecoveryModule (guardian recovery execution)
   SAFE_RECOVERY_MODULE_ADDRESS: Joi.string().allow('').optional(),

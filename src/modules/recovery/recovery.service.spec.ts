@@ -1,4 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { keccak256, toHex } from 'viem';
 import {
   GuardianStatus,
   RecoveryApprovalStatus,
@@ -8,6 +10,10 @@ import {
 } from '@shared/enums';
 import { RecoveryService } from './recovery.service';
 import { CreateRecoveryRequestDto } from './dto/create-recovery-request.dto';
+import {
+  RecoveryNextStep,
+  resolveRecoveryClientHints,
+} from './dto/recovery-response.dto';
 
 describe('RecoveryService', () => {
   const ownerId = 'owner-1';
@@ -17,13 +23,14 @@ describe('RecoveryService', () => {
   const owner = {
     id: ownerId,
     email: 'owner@example.com',
-    displayName: 'Alex',
+    displayName: 'Alex Won',
     status: UserStatus.ACTIVE,
+    turnkeyUserId: 'tk-owner-old',
   };
 
   const guardianUser = {
     id: guardianUserId,
-    email: 'mark@example.com',
+    email: 'mark1@example.com',
     displayName: 'Mark de Vries',
     status: UserStatus.ACTIVE,
   };
@@ -38,6 +45,11 @@ describe('RecoveryService', () => {
     guardianThreshold: 2,
   };
 
+  const guardianKey = generatePrivateKey();
+  const guardianAccount = privateKeyToAccount(guardianKey);
+  const recoveryHash = keccak256(toHex('recovery-test'));
+  const newOwnerAddress = '0x7Ac800000000000000000000000000000000894e';
+
   const guardians = [
     {
       id: 'g-1',
@@ -45,6 +57,7 @@ describe('RecoveryService', () => {
       guardianUserId,
       guardianEmail: 'mark@example.com',
       guardianName: 'Mark de Vries',
+      guardianAddress: '0x2222222222222222222222222222222222222222',
       status: GuardianStatus.ACTIVE,
       canApproveRecovery: true,
       canMoveFunds: false,
@@ -56,6 +69,7 @@ describe('RecoveryService', () => {
       guardianUserId: 'guardian-user-2',
       guardianEmail: 'sofie@example.com',
       guardianName: 'Sofie Vermeer',
+      guardianAddress: guardianAccount.address,
       status: GuardianStatus.ACTIVE,
       canApproveRecovery: true,
       canMoveFunds: false,
@@ -66,6 +80,7 @@ describe('RecoveryService', () => {
       guardianUserId: 'guardian-user-3',
       guardianEmail: 'anna@example.com',
       guardianName: 'Anna Bakker',
+      guardianAddress: '0x3333333333333333333333333333333333333333',
       status: GuardianStatus.ACTIVE,
       canApproveRecovery: true,
       canMoveFunds: false,
@@ -75,9 +90,13 @@ describe('RecoveryService', () => {
   let service: RecoveryService;
   let recoveryRequestRepository: {
     findPendingByWalletId: jest.Mock;
+    findActiveByWalletId: jest.Mock;
+    findExecutedAwaitingClaimByWalletId: jest.Mock;
+    findActiveOthersByWalletId: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
     findByIdWithRelations: jest.Mock;
+    findByWalletIdWithRelations: jest.Mock;
   };
   let recoveryApprovalRepository: {
     create: jest.Mock;
@@ -90,16 +109,43 @@ describe('RecoveryService', () => {
     findByUserId: jest.Mock;
     findBySmartAccountAddress: jest.Mock;
     getById: jest.Mock;
+    save: jest.Mock;
   };
-  let profileService: { findByEmail: jest.Mock; getById: jest.Mock };
+  let profileService: {
+    findByEmail: jest.Mock;
+    getById: jest.Mock;
+    rebindTurnkeyIdentity: jest.Mock;
+    setProviderReference: jest.Mock;
+  };
   let notificationService: { notify: jest.Mock };
+  let pimlicoService: {
+    getRecoveryHashWithNonce: jest.Mock;
+    isSocialRecoveryGuardian: jest.Mock;
+    getOnChainRecoveryRequest: jest.Mock;
+  };
+  let relayerService: { relayTransaction: jest.Mock };
+  let safeService: {
+    getRecoveryModuleAddress: jest.Mock;
+    buildMultiConfirmRecoveryCallData: jest.Mock;
+    buildFinalizeRecoveryCallData: jest.Mock;
+    getSafeOwners: jest.Mock;
+  };
+  let turnkeyService: {
+    verifySessionToken: jest.Mock;
+    organizationControlsAddress: jest.Mock;
+  };
+  let authService: { openSessionForUser: jest.Mock };
 
   beforeEach(() => {
     recoveryRequestRepository = {
       findPendingByWalletId: jest.fn().mockResolvedValue(null),
+      findActiveByWalletId: jest.fn().mockResolvedValue(null),
+      findExecutedAwaitingClaimByWalletId: jest.fn().mockResolvedValue(null),
+      findActiveOthersByWalletId: jest.fn().mockResolvedValue([]),
       create: jest.fn((data: Record<string, unknown>) => ({ id: 'rec-1', ...data })),
       save: jest.fn((entity: Record<string, unknown>) => Promise.resolve(entity)),
       findByIdWithRelations: jest.fn(),
+      findByWalletIdWithRelations: jest.fn().mockResolvedValue([]),
     };
     recoveryApprovalRepository = {
       create: jest.fn((data: Record<string, unknown>) => ({
@@ -117,14 +163,52 @@ describe('RecoveryService', () => {
       findByUserId: jest.fn().mockResolvedValue(wallet),
       findBySmartAccountAddress: jest.fn().mockResolvedValue(wallet),
       getById: jest.fn().mockResolvedValue(wallet),
+      save: jest.fn((entity: unknown) => Promise.resolve(entity)),
     };
     profileService = {
       findByEmail: jest.fn().mockResolvedValue(owner),
       getById: jest.fn((id: string) =>
         Promise.resolve(id === ownerId ? owner : id === guardianUserId ? guardianUser : owner),
       ),
+      rebindTurnkeyIdentity: jest.fn().mockResolvedValue(owner),
+      setProviderReference: jest.fn().mockResolvedValue(undefined),
     };
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
+    pimlicoService = {
+      getRecoveryHashWithNonce: jest.fn().mockResolvedValue({ hash: recoveryHash, nonce: 0n }),
+      isSocialRecoveryGuardian: jest.fn().mockResolvedValue(true),
+      getOnChainRecoveryRequest: jest.fn().mockResolvedValue({
+        guardiansApprovalCount: 2n,
+        newThreshold: 1n,
+        executeAfter: 0n,
+        newOwners: [],
+      }),
+    };
+    relayerService = {
+      relayTransaction: jest.fn().mockResolvedValue('0xtxhash'),
+    };
+    safeService = {
+      getRecoveryModuleAddress: jest
+        .fn()
+        .mockReturnValue('0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897'),
+      buildMultiConfirmRecoveryCallData: jest.fn().mockReturnValue('0xdead'),
+      buildFinalizeRecoveryCallData: jest.fn().mockReturnValue('0xfinalize'),
+      getSafeOwners: jest.fn().mockResolvedValue([wallet.ownerAddress]),
+    };
+    turnkeyService = {
+      verifySessionToken: jest.fn().mockResolvedValue({
+        userId: 'tk-new',
+        organizationId: 'org-new',
+      }),
+      organizationControlsAddress: jest.fn().mockResolvedValue(true),
+    };
+    authService = {
+      openSessionForUser: jest.fn().mockResolvedValue({
+        accessToken: 'a',
+        refreshToken: 'r',
+        expiresIn: 3600,
+      }),
+    };
 
     service = new RecoveryService(
       recoveryRequestRepository as never,
@@ -133,6 +217,11 @@ describe('RecoveryService', () => {
       walletService as never,
       profileService as never,
       notificationService as never,
+      pimlicoService as never,
+      relayerService as never,
+      safeService as never,
+      turnkeyService as never,
+      authService as never,
     );
   });
 
@@ -173,23 +262,91 @@ describe('RecoveryService', () => {
       requestedByEmail: 'owner@example.com',
     };
 
-    it('creates approvals and notifies guardians via in-app notification', async () => {
+    it('creates approvals with on-chain recovery hash and notifies guardians', async () => {
       const result = await service.createRequest(dto);
 
       expect(result.requiredApprovals).toBe(2);
       expect(result.guardiansRegistered).toBe(3);
+      expect(result.recoveryHash).toBe(recoveryHash);
       expect(result.newOwnerAddress.toLowerCase()).toBe(dto.newOwnerAddress.toLowerCase());
       expect(notificationService.notify).toHaveBeenCalledTimes(3);
+      expect(pimlicoService.isSocialRecoveryGuardian).toHaveBeenCalled();
     });
 
     it('rejects duplicate pending recovery', async () => {
-      recoveryRequestRepository.findPendingByWalletId.mockResolvedValue({ id: 'existing' });
+      recoveryRequestRepository.findActiveByWalletId.mockResolvedValue({
+        id: 'existing',
+        status: RecoveryRequestStatus.PENDING,
+      });
       await expect(service.createRequest(dto)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects when an approved (not executed) recovery already exists', async () => {
+      recoveryRequestRepository.findActiveByWalletId.mockResolvedValue({
+        id: 'existing-approved',
+        status: RecoveryRequestStatus.APPROVED,
+      });
+      await expect(service.createRequest(dto)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('defaults requestedByEmail to the wallet owner email when omitted', async () => {
+      await service.createRequest({
+        walletId,
+        newOwnerAddress: dto.newOwnerAddress,
+      });
+
+      expect(recoveryRequestRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ requestedByEmail: owner.email }),
+      );
+    });
+  });
+
+  describe('listRequests', () => {
+    it('returns requests with per-guardian approval status', async () => {
+      recoveryRequestRepository.findByWalletIdWithRelations.mockResolvedValue([
+        {
+          id: 'rec-1',
+          walletId,
+          wallet,
+          newOwnerAddress: '0x7ac800000000000000000000000000000000894e',
+          requiredApprovals: 2,
+          status: RecoveryRequestStatus.PENDING,
+          recoveryHash,
+          recoveryNonce: '0',
+          createdAt: new Date(),
+          approvals: [
+            {
+              id: 'apr-1',
+              guardianId: 'g-1',
+              status: RecoveryApprovalStatus.APPROVED,
+              guardian: guardians[0],
+              decidedAt: new Date(),
+            },
+            {
+              id: 'apr-2',
+              guardianId: 'g-2',
+              status: RecoveryApprovalStatus.PENDING,
+              guardian: guardians[1],
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.listRequests(walletId);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].approvalsCount).toBe(1);
+      expect(result[0].approvals.map((row) => row.status)).toEqual([
+        RecoveryApprovalStatus.APPROVED,
+        RecoveryApprovalStatus.PENDING,
+      ]);
+      expect(result[0].approvals[0].guardianName).toBe('Mark de Vries');
     });
   });
 
   describe('approve', () => {
-    it('marks request approved when threshold is met', async () => {
+    it('requires a signature that recovers to the guardian address and executes on threshold', async () => {
+      const signature = await guardianAccount.sign({ hash: recoveryHash });
       const approval = {
         id: 'apr-g-2',
         guardianId: 'g-2',
@@ -197,25 +354,76 @@ describe('RecoveryService', () => {
         guardian: guardians[1],
         recoveryRequest: {
           id: 'rec-1',
+          walletId,
           status: RecoveryRequestStatus.PENDING,
           requiredApprovals: 2,
+          newOwnerAddress,
+          recoveryHash,
+          recoveryNonce: '0',
           expiresAt: new Date(Date.now() + 86_400_000),
+          wallet,
           approvals: [
-            { id: 'apr-g-1', status: RecoveryApprovalStatus.APPROVED },
-            { id: 'apr-g-2', status: RecoveryApprovalStatus.PENDING },
-            { id: 'apr-g-3', status: RecoveryApprovalStatus.PENDING },
+            {
+              id: 'apr-g-1',
+              status: RecoveryApprovalStatus.APPROVED,
+              signature: `0x${'11'.repeat(65)}`,
+              guardian: guardians[0],
+            },
+            { id: 'apr-g-2', status: RecoveryApprovalStatus.PENDING, guardian: guardians[1] },
+            { id: 'apr-g-3', status: RecoveryApprovalStatus.PENDING, guardian: guardians[2] },
           ],
         },
       };
       recoveryApprovalRepository.findByIdWithRelations.mockResolvedValue(approval);
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        ...approval.recoveryRequest,
+        status: RecoveryRequestStatus.APPROVED,
+        approvals: [
+          {
+            id: 'apr-g-1',
+            status: RecoveryApprovalStatus.APPROVED,
+            signature: `0x${'11'.repeat(65)}`,
+            guardian: guardians[0],
+          },
+          {
+            id: 'apr-g-2',
+            status: RecoveryApprovalStatus.APPROVED,
+            signature,
+            guardian: guardians[1],
+          },
+        ],
+      });
       profileService.getById.mockResolvedValue({
         id: 'guardian-user-2',
         email: 'sofie@example.com',
       });
 
-      const result = await service.approve('guardian-user-2', 'apr-g-2');
-      expect(result.recoveryStatus).toBe(RecoveryRequestStatus.APPROVED);
+      // multiConfirm starts grace period at T+0; then finalize when period already elapsed.
+      pimlicoService.getOnChainRecoveryRequest
+        .mockResolvedValueOnce({
+          guardiansApprovalCount: 0n,
+          newThreshold: 1n,
+          executeAfter: 0n,
+          newOwners: [],
+        })
+        .mockResolvedValueOnce({
+          guardiansApprovalCount: 2n,
+          newThreshold: 1n,
+          executeAfter: BigInt(Math.floor(Date.now() / 1000) - 10),
+          newOwners: [newOwnerAddress],
+        });
+      safeService.getSafeOwners
+        .mockResolvedValueOnce([wallet.ownerAddress])
+        .mockResolvedValueOnce([newOwnerAddress]);
+      relayerService.relayTransaction
+        .mockResolvedValueOnce('0xconfirm')
+        .mockResolvedValueOnce('0xfinalize');
+
+      const result = await service.approve('guardian-user-2', 'apr-g-2', signature);
+      expect(result.recoveryStatus).toBe(RecoveryRequestStatus.EXECUTED);
       expect(result.approvalsCount).toBe(2);
+      expect(relayerService.relayTransaction).toHaveBeenCalledTimes(2);
+      expect(result.executionTxHash).toBe('0xfinalize');
     });
   });
 
@@ -246,6 +454,166 @@ describe('RecoveryService', () => {
 
       const result = await service.decline('guardian-user-2', 'apr-g-2');
       expect(result.recoveryStatus).toBe(RecoveryRequestStatus.REJECTED);
+    });
+  });
+
+  describe('retryExecute', () => {
+    it('invokes on-chain confirm/finalize for approved recovery requests', async () => {
+      const executeSpy = jest
+        .spyOn(service as never, 'executeOnChain' as never)
+        .mockResolvedValue(undefined as never);
+
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        id: 'rec-approved',
+        walletId,
+        wallet,
+        status: RecoveryRequestStatus.APPROVED,
+        newOwnerAddress,
+        recoveryHash,
+        expiresAt: new Date(Date.now() + 86_400_000),
+        finalizeAfter: new Date(Date.now() + 3_600_000),
+        failureReason: null,
+        approvals: [],
+      });
+
+      await expect(service.retryExecute('rec-approved')).resolves.toMatchObject({
+        id: 'rec-approved',
+        status: RecoveryRequestStatus.APPROVED,
+        finalizeAfter: expect.any(Date),
+        canClaim: false,
+        canFinalize: false,
+        claimAvailableAfter: expect.any(Date),
+        nextStep: 'await_grace_period',
+        message: expect.stringContaining('Grace period active'),
+      });
+      expect(executeSpy).toHaveBeenCalled();
+      executeSpy.mockRestore();
+    });
+  });
+
+  describe('cancel', () => {
+    it('cancels a pending request when email matches', async () => {
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        id: 'rec-1',
+        status: RecoveryRequestStatus.PENDING,
+        requestedByEmail: 'owner@example.com',
+        wallet: { ...wallet, user: owner },
+        approvals: [],
+      });
+
+      const result = await service.cancel('rec-1', { email: 'owner@example.com' });
+      expect(result.status).toBe(RecoveryRequestStatus.CANCELLED);
+    });
+  });
+
+  describe('claim', () => {
+    it('rebinds Turnkey identity and issues app tokens after on-chain execute', async () => {
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        id: 'rec-1',
+        walletId,
+        wallet: { ...wallet, ownerAddress: newOwnerAddress, user: owner },
+        status: RecoveryRequestStatus.EXECUTED,
+        executionTxHash: '0xtxhash',
+        newOwnerAddress,
+        approvals: [],
+      });
+      safeService.getSafeOwners.mockResolvedValue([newOwnerAddress]);
+
+      const tokens = await service.claim(
+        'rec-1',
+        { sessionJwt: 'jwt', deviceName: 'phone', platform: 'ios' },
+        { ipAddress: '127.0.0.1' },
+      );
+
+      expect(turnkeyService.verifySessionToken).toHaveBeenCalledWith('jwt');
+      expect(turnkeyService.organizationControlsAddress).toHaveBeenCalled();
+      expect(safeService.getSafeOwners).toHaveBeenCalled();
+      expect(profileService.rebindTurnkeyIdentity).toHaveBeenCalledWith(ownerId, 'tk-new');
+      expect(authService.openSessionForUser).toHaveBeenCalledWith(
+        ownerId,
+        { ipAddress: '127.0.0.1' },
+        expect.objectContaining({ revokeOthers: true }),
+      );
+      expect(tokens.accessToken).toBe('a');
+      expect(recoveryRequestRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: RecoveryRequestStatus.CLAIMED,
+          claimedAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it('rejects claim when recovery is not executed', async () => {
+      recoveryRequestRepository.findByIdWithRelations.mockResolvedValue({
+        id: 'rec-1',
+        status: RecoveryRequestStatus.APPROVED,
+        executionTxHash: null,
+        newOwnerAddress,
+        wallet,
+      });
+
+      await expect(service.claim('rec-1', { sessionJwt: 'jwt' }, {})).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+});
+
+describe('resolveRecoveryClientHints', () => {
+  it('returns claim step when recovery is executed', () => {
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.EXECUTED,
+      executionTxHash: '0xabc',
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: true,
+      canFinalize: false,
+      claimAvailableAfter: null,
+      nextStep: RecoveryNextStep.CLAIM,
+    });
+  });
+
+  it('returns grace-period wait before finalize and claim', () => {
+    const finalizeAfter = new Date(Date.now() + 180_000);
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.APPROVED,
+      finalizeAfter,
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: false,
+      canFinalize: false,
+      claimAvailableAfter: finalizeAfter,
+      nextStep: RecoveryNextStep.AWAIT_GRACE_PERIOD,
+    });
+  });
+
+  it('returns none step when recovery status is claimed', () => {
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.CLAIMED,
+      executionTxHash: '0xabc',
+      confirmTxHash: '0xconfirm',
+      claimedAt: new Date(),
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: false,
+      nextStep: RecoveryNextStep.NONE,
+    });
+  });
+
+  it('returns finalize step after grace period ends', () => {
+    const finalizeAfter = new Date(Date.now() - 1_000);
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.APPROVED,
+      finalizeAfter,
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: false,
+      canFinalize: true,
+      nextStep: RecoveryNextStep.EXECUTE_FINALIZE,
     });
   });
 });

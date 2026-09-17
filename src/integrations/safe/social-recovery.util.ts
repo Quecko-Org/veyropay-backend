@@ -50,6 +50,24 @@ export function buildMultiConfirmRecoveryCallData(
   });
 }
 
+// Public / relayer-callable after the module grace period (executeAfter). This is what
+// actually swaps Safe owners - multiConfirmRecovery only starts the delay.
+export function buildFinalizeRecoveryCallData(wallet: Address): Hex {
+  return encodeFunctionData({
+    abi: SOCIAL_RECOVERY_MODULE_ABI,
+    functionName: 'finalizeRecovery',
+    args: [wallet],
+  });
+}
+
+export function buildGetRecoveryRequestCallData(wallet: Address): Hex {
+  return encodeFunctionData({
+    abi: SOCIAL_RECOVERY_MODULE_ABI,
+    functionName: 'getRecoveryRequest',
+    args: [wallet],
+  });
+}
+
 export function buildGetRecoveryHashCallData(
   wallet: Address,
   newOwners: Address[],
@@ -77,4 +95,25 @@ export function buildIsGuardianCallData(wallet: Address, guardian: Address): Hex
     functionName: 'isGuardian',
     args: [wallet, guardian],
   });
+}
+
+export function buildGuardiansCountCallData(wallet: Address): Hex {
+  return encodeFunctionData({
+    abi: SOCIAL_RECOVERY_MODULE_ABI,
+    functionName: 'guardiansCount',
+    args: [wallet],
+  });
+}
+
+// SocialRecoveryModule requires threshold <= guardianCount *after* the add. Encoding the
+// final DB/target threshold while on-chain count is still lower reverts with
+// "GS: threshold must be lower or equal to guardians count" (wrapped as ExecutionFailed
+// by Safe4337Module). Clamp to the post-add count so each sequential registration is valid.
+export function resolveAddGuardianThreshold(
+  desiredThreshold: number,
+  onChainGuardiansCount: number,
+): number {
+  const afterAdd = Math.max(0, onChainGuardiansCount) + 1;
+  const desired = Math.max(1, desiredThreshold);
+  return Math.min(desired, afterAdd);
 }

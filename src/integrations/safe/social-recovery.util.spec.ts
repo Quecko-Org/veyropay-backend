@@ -4,12 +4,25 @@ import {
   buildGetRecoveryHashCallData,
   buildMultiConfirmRecoveryCallData,
   buildRecoveryNonceCallData,
+  resolveAddGuardianThreshold,
 } from './social-recovery.util';
 
 describe('social-recovery.util', () => {
   const guardian: Address = '0x1111111111111111111111111111111111111111';
   const wallet: Address = '0x2222222222222222222222222222222222222222';
   const newOwner: Address = '0x3333333333333333333333333333333333333333';
+
+  describe('resolveAddGuardianThreshold', () => {
+    it('clamps to 1 when no guardians are on-chain yet', () => {
+      expect(resolveAddGuardianThreshold(2, 0)).toBe(1);
+    });
+
+    it('allows raising threshold as on-chain count grows', () => {
+      expect(resolveAddGuardianThreshold(2, 1)).toBe(2);
+      expect(resolveAddGuardianThreshold(3, 1)).toBe(2);
+      expect(resolveAddGuardianThreshold(3, 2)).toBe(3);
+    });
+  });
 
   describe('buildAddGuardianWithThresholdCallData', () => {
     it('encodes a call to addGuardianWithThreshold', () => {

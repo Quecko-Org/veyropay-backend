@@ -20,7 +20,7 @@ export class RecoveryApprovalRepository extends BaseRepository<RecoveryApprovalE
         guardian: { guardianUser: true },
         recoveryRequest: {
           wallet: { user: true },
-          approvals: true,
+          approvals: { guardian: { guardianUser: true } },
         },
       },
     });

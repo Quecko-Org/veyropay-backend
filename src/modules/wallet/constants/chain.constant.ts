@@ -1,2 +1,2 @@
-// Base mainnet - the only chain supported at launch per docs/01_PROJECT_OVERVIEW.md.
-export const BASE_CHAIN_ID = 8453;
+// Defaults to Base mainnet; override with WALLET_CHAIN_ID (e.g. 84532 for Base Sepolia).
+export const BASE_CHAIN_ID = Number(process.env.WALLET_CHAIN_ID ?? 8453);

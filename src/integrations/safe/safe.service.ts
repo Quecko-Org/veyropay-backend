@@ -1,17 +1,23 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Safe from '@safe-global/protocol-kit';
-import { Address, Hex } from 'viem';
+import { Address, decodeFunctionResult, getAddress, Hex } from 'viem';
 import { ProviderException } from '@common/exceptions';
 import { ISafeConfig } from '@core/config/safe.config';
+import { ChainRpcClient } from '@integrations/chain-rpc/chain-rpc.client';
 import { SafeClient } from './safe.client';
 import { ISafeCreationInfo, ISafeInfo } from './types';
 import { SAFE_PROVIDER_NAME } from './constants';
-import { buildEnableModulesSetupCallData } from './safe-account.util';
+import { buildEnableModuleCallData, buildEnableModulesSetupCallData } from './safe-account.util';
+import { SOCIAL_RECOVERY_MODULE_ABI } from './social-recovery-module.constant';
 import {
   buildAddGuardianWithThresholdCallData,
   buildChangeThresholdCallData,
+  buildFinalizeRecoveryCallData,
   buildGetRecoveryHashCallData,
+  buildGetRecoveryRequestCallData,
+  buildGuardiansCountCallData,
+  buildIsGuardianCallData,
   buildMultiConfirmRecoveryCallData,
   buildRecoveryNonceCallData,
   IGuardianSignature,
@@ -51,6 +57,7 @@ export class SafeService {
 
   constructor(
     private readonly client: SafeClient,
+    private readonly chainRpcClient: ChainRpcClient,
     configService: ConfigService,
   ) {
     this.config = configService.get<ISafeConfig>('safe') as ISafeConfig;
@@ -93,12 +100,20 @@ export class SafeService {
 
   // Unsigned {to, value, data} for SafeProxyFactory.createProxyWithNonce(), for use as
   // the tail of a UserOperation's initCode on the Safe's first-ever transaction.
-  async buildDeploymentTransaction(ownerAddress: Address): Promise<ISafeCallData> {
+  // Returns null when the Safe is already on-chain (getCode can lag Protocol Kit).
+  async buildDeploymentTransaction(ownerAddress: Address): Promise<ISafeCallData | null> {
     try {
       const kit = await this.getPredictedKit(ownerAddress);
       const tx = await kit.createSafeDeploymentTransaction();
       return { to: tx.to as Address, value: BigInt(tx.value), data: tx.data as Hex };
     } catch (error) {
+      if (error instanceof Error && /already deployed/i.test(error.message)) {
+        this.logger.log(
+          { ownerAddress },
+          'Safe already deployed - skipping deployment transaction encoding',
+        );
+        return null;
+      }
       this.logger.warn({ err: error }, 'Safe deployment transaction encoding failed');
       throw new ProviderException(
         SAFE_PROVIDER_NAME,
@@ -111,20 +126,45 @@ export class SafeService {
     return this.config.recoveryModuleAddress;
   }
 
+  async isSafeDeployed(safeAddress: Address): Promise<boolean> {
+    try {
+      const code = await this.chainRpcClient.getCode(safeAddress);
+      return Boolean(code) && code !== '0x';
+    } catch (error) {
+      this.logger.warn({ err: error, safeAddress }, 'Safe deployment check failed');
+      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to check Safe deployment state');
+    }
+  }
+
   // Unsigned {to, value, data} for Safe.enableModule() - additive opt-in step, executed
   // as a normal UserOperation through the Safe's own executeUserOp (same path as any
-  // other Safe transaction), not touched by Phase 3's predicted-Safe setup config.
-  // Requires the Safe to already be deployed (Protocol Kit reads current module state
-  // to build this transaction).
+  // other Safe transaction). Works for counterfactual (not-yet-deployed) Safes too:
+  // prepare UserOp attaches factory/factoryData automatically when code is empty.
   async buildEnableRecoveryModuleTransaction(safeAddress: Address): Promise<ISafeCallData> {
-    try {
-      const kit = await this.getDeployedKit(safeAddress);
-      const tx = await kit.createEnableModuleTx(this.config.recoveryModuleAddress);
-      return { to: tx.data.to as Address, value: BigInt(tx.data.value), data: tx.data.data as Hex };
-    } catch (error) {
-      this.logger.warn({ err: error }, 'Enable-module transaction encoding failed');
-      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to build enable-module transaction');
+    const deployed = await this.isSafeDeployed(safeAddress);
+    if (deployed) {
+      try {
+        const kit = await this.getDeployedKit(safeAddress);
+        const tx = await kit.createEnableModuleTx(this.config.recoveryModuleAddress);
+        return {
+          to: tx.data.to as Address,
+          value: BigInt(tx.data.value),
+          data: tx.data.data as Hex,
+        };
+      } catch (error) {
+        this.logger.warn({ err: error }, 'Enable-module transaction encoding failed');
+        throw new ProviderException(
+          SAFE_PROVIDER_NAME,
+          'Unable to build enable-module transaction',
+        );
+      }
     }
+
+    return {
+      to: getAddress(safeAddress),
+      value: 0n,
+      data: buildEnableModuleCallData(this.config.recoveryModuleAddress),
+    };
   }
 
   async isRecoveryModuleEnabled(safeAddress: Address): Promise<boolean> {
@@ -187,6 +227,14 @@ export class SafeService {
     );
   }
 
+  buildFinalizeRecoveryCallData(walletAddress: Address): Hex {
+    return buildFinalizeRecoveryCallData(walletAddress);
+  }
+
+  buildGetRecoveryRequestCallData(walletAddress: Address): Hex {
+    return buildGetRecoveryRequestCallData(walletAddress);
+  }
+
   buildGetRecoveryHashCallData(
     walletAddress: Address,
     newOwnerAddress: Address,
@@ -199,6 +247,49 @@ export class SafeService {
     return buildRecoveryNonceCallData(walletAddress);
   }
 
+  buildIsGuardianCallData(walletAddress: Address, guardianAddress: Address): Hex {
+    return buildIsGuardianCallData(walletAddress, guardianAddress);
+  }
+
+  buildGuardiansCountCallData(walletAddress: Address): Hex {
+    return buildGuardiansCountCallData(walletAddress);
+  }
+
+  async getGuardiansCount(safeAddress: Address): Promise<number> {
+    try {
+      const result = await this.chainRpcClient.ethCall(
+        this.config.recoveryModuleAddress,
+        buildGuardiansCountCallData(safeAddress),
+      );
+      const count = decodeFunctionResult({
+        abi: SOCIAL_RECOVERY_MODULE_ABI,
+        functionName: 'guardiansCount',
+        data: result as Hex,
+      });
+      return Number(count);
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Recovery module guardiansCount lookup failed');
+      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to read on-chain guardian count');
+    }
+  }
+
+  async isRecoveryGuardian(safeAddress: Address, guardianAddress: Address): Promise<boolean> {
+    try {
+      const result = await this.chainRpcClient.ethCall(
+        this.config.recoveryModuleAddress,
+        buildIsGuardianCallData(safeAddress, guardianAddress),
+      );
+      return decodeFunctionResult({
+        abi: SOCIAL_RECOVERY_MODULE_ABI,
+        functionName: 'isGuardian',
+        data: result as Hex,
+      });
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Recovery module isGuardian lookup failed');
+      throw new ProviderException(SAFE_PROVIDER_NAME, 'Unable to check on-chain guardian status');
+    }
+  }
+
   async getSafeInfo(safeAddress: string): Promise<ISafeInfo> {
     try {
       return await this.client.getSafeInfo(safeAddress);
@@ -209,6 +300,31 @@ export class SafeService {
         'Unable to fetch Safe info',
         HttpStatus.BAD_GATEWAY,
       );
+    }
+  }
+
+  // Safe Transaction Service often 404s on testnet for freshly deployed Safes that are
+  // not indexed yet — fall back to Protocol Kit / RPC owner reads for recovery checks.
+  async getSafeOwners(safeAddress: Address): Promise<string[]> {
+    try {
+      const info = await this.client.getSafeInfo(safeAddress);
+      return info.owners;
+    } catch (error) {
+      this.logger.warn(
+        { err: error, safeAddress },
+        'Safe tx-service owner lookup failed; falling back to on-chain getOwners',
+      );
+      try {
+        const kit = await this.getDeployedKit(safeAddress);
+        return await kit.getOwners();
+      } catch (onChainError) {
+        this.logger.warn({ err: onChainError, safeAddress }, 'On-chain Safe owner lookup failed');
+        throw new ProviderException(
+          SAFE_PROVIDER_NAME,
+          'Unable to read Safe owners',
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
     }
   }
 

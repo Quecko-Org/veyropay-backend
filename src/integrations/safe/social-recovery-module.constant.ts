@@ -15,7 +15,17 @@ import { Hex } from 'viem';
 // override-able via SAFE_RECOVERY_MODULE_ADDRESS, but it has NOT been confirmed to
 // have deployed bytecode on Base. See docs/18_DECISIONS_AND_ASSUMPTIONS.md §2.1 for the
 // full disclosure - this is the single biggest open item in the recovery-execution path.
+//
+// recoveryPeriod is immutable in the module constructor (official Safe deploy = 14 days).
+// Backend cannot shorten an already-started grace period. For faster local/Base testing,
+// point SAFE_RECOVERY_MODULE_ADDRESS at Candide's short-period deploy (same ABI), e.g.
+// After3Minutes = 0x949d01d424bE050D09C16025dd007CB59b3A8c66 - then re-enable the module
+// and re-register guardians on that address (guardians are per-module).
 export const SOCIAL_RECOVERY_MODULE_ADDRESS: Hex = '0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897';
+
+/** Candide SocialRecoveryModule with a 3-minute grace period (testing only). */
+export const SOCIAL_RECOVERY_MODULE_ADDRESS_3_MIN: Hex =
+  '0x949d01d424bE050D09C16025dd007CB59b3A8c66';
 
 // Function subset actually used by this backend - full ABI has 24 functions, only the
 // ones needed for guardian registration, hash computation, and relayed execution are
@@ -79,6 +89,31 @@ export const SOCIAL_RECOVERY_MODULE_ABI = [
       { name: '_newThreshold', type: 'uint256' },
     ],
     outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'finalizeRecovery',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: '_wallet', type: 'address' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'getRecoveryRequest',
+    stateMutability: 'view',
+    inputs: [{ name: '_wallet', type: 'address' }],
+    outputs: [
+      {
+        name: 'request',
+        type: 'tuple',
+        components: [
+          { name: 'guardiansApprovalCount', type: 'uint256' },
+          { name: 'newThreshold', type: 'uint256' },
+          { name: 'executeAfter', type: 'uint64' },
+          { name: 'newOwners', type: 'address[]' },
+        ],
+      },
+    ],
   },
   {
     type: 'function',

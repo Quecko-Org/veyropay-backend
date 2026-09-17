@@ -67,6 +67,7 @@ describe('GuardianService', () => {
     findOutgoingForWallet: jest.Mock;
     findIncomingForUser: jest.Mock;
     findByIdWithRelations: jest.Mock;
+    findActiveApproversForWallet: jest.Mock;
   };
   let profileService: {
     getById: jest.Mock;
@@ -74,6 +75,7 @@ describe('GuardianService', () => {
   };
   let walletService: {
     getByUserId: jest.Mock;
+    getById: jest.Mock;
     findByUserId: jest.Mock;
     findByUserIds: jest.Mock;
     findBySmartAccountAddress: jest.Mock;
@@ -81,6 +83,15 @@ describe('GuardianService', () => {
   let notificationService: { notify: jest.Mock };
   let sendgridService: { sendGuardianInvitation: jest.Mock };
   let configService: { get: jest.Mock };
+  let safeService: {
+    getRecoveryModuleAddress: jest.Mock;
+    isSafeDeployed: jest.Mock;
+    isRecoveryModuleEnabled: jest.Mock;
+    buildAddGuardianCallData: jest.Mock;
+    buildEnableRecoveryModuleTransaction: jest.Mock;
+    getGuardiansCount: jest.Mock;
+    isRecoveryGuardian: jest.Mock;
+  };
 
   beforeEach(() => {
     guardianRepository = {
@@ -92,6 +103,7 @@ describe('GuardianService', () => {
       findOutgoingForWallet: jest.fn(),
       findIncomingForUser: jest.fn(),
       findByIdWithRelations: jest.fn(),
+      findActiveApproversForWallet: jest.fn().mockResolvedValue([{}, {}]),
     };
     profileService = {
       getById: jest.fn((id: string) => Promise.resolve(id === callerId ? caller : target)),
@@ -99,6 +111,7 @@ describe('GuardianService', () => {
     };
     walletService = {
       getByUserId: jest.fn().mockResolvedValue(wallet),
+      getById: jest.fn().mockResolvedValue(wallet),
       findByUserId: jest.fn().mockResolvedValue(null),
       findByUserIds: jest.fn().mockResolvedValue([]),
       findBySmartAccountAddress: jest.fn().mockResolvedValue(null),
@@ -106,6 +119,15 @@ describe('GuardianService', () => {
     notificationService = { notify: jest.fn().mockResolvedValue({}) };
     sendgridService = { sendGuardianInvitation: jest.fn().mockResolvedValue(undefined) };
     configService = { get: jest.fn().mockReturnValue({ corsOrigin: 'https://app.example' }) };
+    safeService = {
+      getRecoveryModuleAddress: jest.fn().mockReturnValue('0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897'),
+      isSafeDeployed: jest.fn().mockResolvedValue(true),
+      isRecoveryModuleEnabled: jest.fn().mockResolvedValue(true),
+      buildAddGuardianCallData: jest.fn().mockReturnValue('0xadd'),
+      buildEnableRecoveryModuleTransaction: jest.fn(),
+      getGuardiansCount: jest.fn().mockResolvedValue(0),
+      isRecoveryGuardian: jest.fn().mockResolvedValue(false),
+    };
 
     service = new GuardianService(
       guardianRepository as unknown as GuardianRepository,
@@ -113,6 +135,7 @@ describe('GuardianService', () => {
       walletService as never,
       notificationService as never,
       sendgridService as never,
+      safeService as never,
       configService as unknown as ConfigService,
     );
   });
@@ -291,14 +314,20 @@ describe('GuardianService', () => {
 
     it('accepts a pending invitation for the invitee', async () => {
       guardianRepository.findByIdWithRelations.mockResolvedValue({ ...invited });
-      walletService.findByUserId.mockResolvedValue({ ownerAddress: '0xabc' });
+      walletService.findByUserId.mockResolvedValue({
+        ownerAddress: '0xabc0000000000000000000000000000000000abc',
+        id: 'wallet-2',
+        userId: targetId,
+        chainId: 8453,
+        status: WalletStatus.ACTIVE,
+      });
 
       const result = await service.accept(targetId, 'g-1');
       expect(result.status).toBe('approved');
       expect(guardianRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           status: GuardianStatus.ACTIVE,
-          guardianAddress: '0xabc',
+          guardianAddress: '0xabc0000000000000000000000000000000000abc',
         }),
       );
     });
@@ -318,6 +347,179 @@ describe('GuardianService', () => {
         status: GuardianStatus.ACTIVE,
       });
       await expect(service.decline(targetId, 'g-1')).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('getOnChainRegistration', () => {
+    const activeGuardian: GuardianEntity = {
+      id: '122ee025-71a9-46c0-8f85-ccc07f5ebcb2',
+      walletId,
+      guardianEmail: target.email,
+      guardianName: target.displayName,
+      guardianUserId: targetId,
+      guardianAddress: '0xBFe7b7914208F476FF90AE74bDc5bae009A4F28A',
+      status: GuardianStatus.ACTIVE,
+      canApproveRecovery: true,
+      canMoveFunds: false,
+      canSeeBalance: false,
+      canBeRemoved: true,
+      invitationToken: 'token',
+      invitedAt: new Date(),
+      wallet: { id: walletId, userId: callerId, user: caller } as GuardianEntity['wallet'],
+    } as GuardianEntity;
+
+    beforeEach(() => {
+      guardianRepository.findByIdWithRelations.mockResolvedValue(activeGuardian);
+      walletService.getByUserId.mockResolvedValue({
+        ...wallet,
+        smartAccountAddress: '0x07553c8381351B6b55898e2D9922c2813135C9Ef',
+        guardianThreshold: 2,
+      });
+    });
+
+    it('clamps addGuardian threshold to on-chain count + 1', async () => {
+      safeService.getGuardiansCount.mockResolvedValue(0);
+
+      const result = await service.getOnChainRegistration(callerId, activeGuardian.id);
+
+      expect(safeService.buildAddGuardianCallData).toHaveBeenCalledWith(
+        '0xBFe7b7914208F476FF90AE74bDc5bae009A4F28A',
+        1,
+      );
+      expect(result.threshold).toBe(1);
+      expect(result.moduleEnabled).toBe(true);
+      expect(result.safeDeployed).toBe(true);
+      expect(result.enableModule).toBeUndefined();
+    });
+
+    it('allows desired threshold once on-chain count supports it', async () => {
+      safeService.getGuardiansCount.mockResolvedValue(1);
+
+      const result = await service.getOnChainRegistration(callerId, activeGuardian.id);
+
+      expect(safeService.buildAddGuardianCallData).toHaveBeenCalledWith(
+        '0xBFe7b7914208F476FF90AE74bDc5bae009A4F28A',
+        2,
+      );
+      expect(result.threshold).toBe(2);
+    });
+
+    it('conflicts when the guardian is already on-chain', async () => {
+      safeService.isRecoveryGuardian.mockResolvedValue(true);
+
+      await expect(
+        service.getOnChainRegistration(callerId, activeGuardian.id),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('returns enableModule calldata for undeployed new-account Safes', async () => {
+      safeService.isSafeDeployed.mockResolvedValue(false);
+      safeService.buildEnableRecoveryModuleTransaction.mockResolvedValue({
+        to: '0x07553c8381351B6b55898e2D9922c2813135C9Ef',
+        value: 0n,
+        data: '0xenable',
+      });
+
+      const result = await service.getOnChainRegistration(callerId, activeGuardian.id);
+
+      expect(result.safeDeployed).toBe(false);
+      expect(result.moduleEnabled).toBe(false);
+      expect(result.threshold).toBe(1);
+      expect(result.enableModule).toEqual({
+        to: '0x07553c8381351B6b55898e2D9922c2813135C9Ef',
+        value: '0',
+        data: '0xenable',
+      });
+      expect(safeService.isRecoveryModuleEnabled).not.toHaveBeenCalled();
+      expect(safeService.buildEnableRecoveryModuleTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('getOnChainStatus', () => {
+    const g1: GuardianEntity = {
+      id: 'g-onchain-1',
+      walletId,
+      guardianEmail: 'a@example.com',
+      guardianName: 'A',
+      guardianAddress: '0xBFe7b7914208F476FF90AE74bDc5bae009A4F28A',
+      status: GuardianStatus.ACTIVE,
+      canApproveRecovery: true,
+    } as GuardianEntity;
+
+    const g2: GuardianEntity = {
+      id: 'g-onchain-2',
+      walletId,
+      guardianEmail: 'b@example.com',
+      guardianName: 'B',
+      guardianAddress: '0x1111111111111111111111111111111111111111',
+      status: GuardianStatus.ACTIVE,
+      canApproveRecovery: true,
+    } as GuardianEntity;
+
+    beforeEach(() => {
+      walletService.getById.mockResolvedValue({
+        ...wallet,
+        smartAccountAddress: '0x07553c8381351B6b55898e2D9922c2813135C9Ef',
+      });
+      guardianRepository.findActiveApproversForWallet.mockResolvedValue([g1, g2]);
+    });
+
+    it('reports ready when every approved guardian is on-chain', async () => {
+      safeService.isRecoveryGuardian
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true);
+
+      const result = await service.getOnChainStatus(walletId);
+
+      expect(walletService.getById).toHaveBeenCalledWith(walletId);
+      expect(result).toMatchObject({
+        safeDeployed: true,
+        moduleEnabled: true,
+        approvedInApp: 2,
+        registeredOnChain: 2,
+        readyForRecovery: true,
+      });
+      expect(result.guardians).toEqual([
+        expect.objectContaining({ id: g1.id, onChainRegistered: true, status: 'approved' }),
+        expect.objectContaining({ id: g2.id, onChainRegistered: true, status: 'approved' }),
+      ]);
+    });
+
+    it('reports not ready when some guardians are only approved in-app', async () => {
+      safeService.isRecoveryGuardian
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      const result = await service.getOnChainStatus(walletId);
+
+      expect(result.approvedInApp).toBe(2);
+      expect(result.registeredOnChain).toBe(1);
+      expect(result.readyForRecovery).toBe(false);
+      expect(result.guardians[1].onChainRegistered).toBe(false);
+    });
+
+    it('skips isGuardian checks when Safe is undeployed', async () => {
+      safeService.isSafeDeployed.mockResolvedValue(false);
+
+      const result = await service.getOnChainStatus(walletId);
+
+      expect(result.safeDeployed).toBe(false);
+      expect(result.moduleEnabled).toBe(false);
+      expect(result.registeredOnChain).toBe(0);
+      expect(result.readyForRecovery).toBe(false);
+      expect(safeService.isRecoveryModuleEnabled).not.toHaveBeenCalled();
+      expect(safeService.isRecoveryGuardian).not.toHaveBeenCalled();
+    });
+
+    it('is not ready when there are no approved guardians', async () => {
+      guardianRepository.findActiveApproversForWallet.mockResolvedValue([]);
+
+      const result = await service.getOnChainStatus(walletId);
+
+      expect(result.approvedInApp).toBe(0);
+      expect(result.registeredOnChain).toBe(0);
+      expect(result.readyForRecovery).toBe(false);
+      expect(result.guardians).toEqual([]);
     });
   });
 

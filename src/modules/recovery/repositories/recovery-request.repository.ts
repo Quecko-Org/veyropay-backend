@@ -1,9 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { BaseRepository } from '@database/base.repository';
 import { RecoveryRequestStatus } from '@shared/enums';
 import { RecoveryRequestEntity } from '../entities/recovery-request.entity';
+
+const IN_FLIGHT_RECOVERY_STATUSES = [
+  RecoveryRequestStatus.PENDING,
+  RecoveryRequestStatus.APPROVED,
+] as const;
+
+const DEFAULT_LIST_STATUSES = [
+  RecoveryRequestStatus.PENDING,
+  RecoveryRequestStatus.APPROVED,
+  RecoveryRequestStatus.EXECUTED,
+] as const;
 
 @Injectable()
 export class RecoveryRequestRepository extends BaseRepository<RecoveryRequestEntity> {
@@ -16,6 +27,49 @@ export class RecoveryRequestRepository extends BaseRepository<RecoveryRequestEnt
   findPendingByWalletId(walletId: string): Promise<RecoveryRequestEntity | null> {
     return this.repository.findOne({
       where: { walletId, status: RecoveryRequestStatus.PENDING },
+    });
+  }
+
+  // Pending or approved-but-not-executed — only one of these may exist per wallet.
+  findActiveByWalletId(walletId: string): Promise<RecoveryRequestEntity | null> {
+    return this.repository.findOne({
+      where: { walletId, status: In([...IN_FLIGHT_RECOVERY_STATUSES]) },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  findExecutedAwaitingClaimByWalletId(walletId: string): Promise<RecoveryRequestEntity | null> {
+    return this.repository.findOne({
+      where: {
+        walletId,
+        status: RecoveryRequestStatus.EXECUTED,
+      },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  findActiveOthersByWalletId(
+    walletId: string,
+    exceptId: string,
+  ): Promise<RecoveryRequestEntity[]> {
+    return this.repository.find({
+      where: { walletId, status: In([...IN_FLIGHT_RECOVERY_STATUSES]) },
+    }).then((rows) => rows.filter((row) => row.id !== exceptId));
+  }
+
+  findByWalletIdWithRelations(
+    walletId: string,
+    status?: RecoveryRequestStatus,
+  ): Promise<RecoveryRequestEntity[]> {
+    return this.repository.find({
+      where: status
+        ? { walletId, status }
+        : { walletId, status: In([...DEFAULT_LIST_STATUSES]) },
+      relations: {
+        wallet: { user: true },
+        approvals: { guardian: { guardianUser: true } },
+      },
+      order: { createdAt: 'DESC' },
     });
   }
 

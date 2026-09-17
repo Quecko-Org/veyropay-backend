@@ -107,6 +107,39 @@ export class ChainRpcClient {
     return this.rpcCall<string>('eth_sendRawTransaction', [signedTransaction]);
   }
 
+  async getTransactionReceipt(
+    hash: string,
+  ): Promise<{ status?: string; blockNumber?: string } | null> {
+    return this.rpcCall<{ status?: string; blockNumber?: string } | null>(
+      'eth_getTransactionReceipt',
+      [hash],
+    );
+  }
+
+  // Polls until the tx is mined (or timeout). Null receipt means "not mined yet" on
+  // standard Ethereum JSON-RPC - do not treat that as failure.
+  async waitForTransactionReceipt(
+    hash: string,
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<{ status?: string; blockNumber?: string }> {
+    const timeoutMs = options?.timeoutMs ?? 60_000;
+    const intervalMs = options?.intervalMs ?? 1_500;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const receipt = await this.getTransactionReceipt(hash);
+      if (receipt) {
+        return receipt;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new ProviderHttpError(
+      `Timed out waiting for transaction receipt: ${hash}`,
+      408,
+    );
+  }
+
   async chainId(): Promise<string> {
     return this.rpcCall<string>('eth_chainId', []);
   }

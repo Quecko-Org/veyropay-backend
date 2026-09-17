@@ -1,4 +1,5 @@
 import dataSource from '../core/database/typeorm.datasource';
+import { ensureDatabaseExists } from './ensure-database';
 
 /**
  * Production was provisioned with schema already present while the TypeORM
@@ -84,6 +85,7 @@ async function schemaObjectExists(checkSql: string): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
+  await ensureDatabaseExists();
   await dataSource.initialize();
 
   try {

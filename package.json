@@ -28,6 +28,7 @@
     "migration:create": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:create",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:ensure-db:prod": "node dist/database/ensure-database.js",
     "migration:baseline:prod": "node dist/database/baseline-migrations.js",
     "migration:run:prod": "npm run migration:baseline:prod && typeorm migration:run -d dist/core/database/typeorm.datasource.js"
   },

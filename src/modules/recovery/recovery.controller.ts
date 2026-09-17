@@ -104,7 +104,9 @@ export class RecoveryController {
     description:
       '1) Relays multiConfirmRecovery if not yet started (starts module grace period). ' +
       '2) After finalizeAfter, relays finalizeRecovery which swaps Safe owners. ' +
-      'Poll GET request for finalizeAfter; call this again when the grace period ends. ' +
+      'While grace period is active this returns 200 with status=approved, finalizeAfter, ' +
+      'canClaim=false, claimAvailableAfter=finalizeAfter, and nextStep=await_grace_period. ' +
+      'After finalize, status=executed with canClaim=true and nextStep=claim for the mobile claim button. ' +
       'Also repairs stuck executed rows where owners were not swapped yet.',
   })
   retryExecute(@Param('id', ParseUUIDPipe) id: string) {

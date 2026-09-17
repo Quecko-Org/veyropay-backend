@@ -113,6 +113,15 @@ export class RecoveryApprovalItemDto {
   }
 }
 
+export enum RecoveryNextStep {
+  COLLECT_APPROVALS = 'collect_approvals',
+  EXECUTE_CONFIRM = 'execute_confirm',
+  AWAIT_GRACE_PERIOD = 'await_grace_period',
+  EXECUTE_FINALIZE = 'execute_finalize',
+  CLAIM = 'claim',
+  NONE = 'none',
+}
+
 export class RecoveryRequestDto {
   @ApiProperty()
   id!: string;
@@ -167,6 +176,31 @@ export class RecoveryRequestDto {
       'When set, SocialRecoveryModule grace period ends at this time - call POST .../execute again after to finalizeRecovery (owner swap)',
   })
   finalizeAfter?: Date | null;
+
+  @ApiProperty({
+    description: 'True when status is executed and POST .../claim is allowed',
+  })
+  canClaim!: boolean;
+
+  @ApiProperty({
+    description:
+      'True when grace period has ended and POST .../execute will relay finalizeRecovery',
+  })
+  canFinalize!: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Earliest time claim becomes available (grace period end). Null when canClaim is true now.',
+  })
+  claimAvailableAfter?: Date | null;
+
+  @ApiProperty({ enum: RecoveryNextStep, description: 'Suggested client action for mobile UX' })
+  nextStep!: RecoveryNextStep;
+
+  @ApiProperty({
+    description: 'Human-readable hint for the current recovery stage',
+  })
+  message!: string;
 
   @ApiPropertyOptional()
   expiresAt?: Date;
@@ -308,12 +342,86 @@ export function toApprovalItem(approval: RecoveryApprovalEntity): RecoveryApprov
   });
 }
 
+export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
+  canClaim: boolean;
+  canFinalize: boolean;
+  claimAvailableAfter: Date | null;
+  nextStep: RecoveryNextStep;
+  message: string;
+} {
+  const now = Date.now();
+  const finalizeAfterMs = entity.finalizeAfter?.getTime();
+
+  if (entity.status === RecoveryRequestStatus.EXECUTED && entity.executionTxHash) {
+    return {
+      canClaim: true,
+      canFinalize: false,
+      claimAvailableAfter: null,
+      nextStep: RecoveryNextStep.CLAIM,
+      message:
+        'Recovery finalized on-chain. Sign in with your new passkey, then call POST .../claim.',
+    };
+  }
+
+  if (entity.status === RecoveryRequestStatus.APPROVED) {
+    if (finalizeAfterMs && finalizeAfterMs > now) {
+      return {
+        canClaim: false,
+        canFinalize: false,
+        claimAvailableAfter: entity.finalizeAfter ?? null,
+        nextStep: RecoveryNextStep.AWAIT_GRACE_PERIOD,
+        message:
+          `Grace period active until ${entity.finalizeAfter!.toISOString()}. ` +
+          'Call POST .../execute again after that time to finalize, then claim.',
+      };
+    }
+
+    if (finalizeAfterMs && finalizeAfterMs <= now) {
+      return {
+        canClaim: false,
+        canFinalize: true,
+        claimAvailableAfter: entity.finalizeAfter ?? null,
+        nextStep: RecoveryNextStep.EXECUTE_FINALIZE,
+        message:
+          'Grace period ended. Call POST .../execute to finalize the owner swap, then claim.',
+      };
+    }
+
+    return {
+      canClaim: false,
+      canFinalize: false,
+      claimAvailableAfter: null,
+      nextStep: RecoveryNextStep.EXECUTE_CONFIRM,
+      message: 'Guardians approved. Call POST .../execute to start on-chain confirmation.',
+    };
+  }
+
+  if (entity.status === RecoveryRequestStatus.PENDING) {
+    return {
+      canClaim: false,
+      canFinalize: false,
+      claimAvailableAfter: null,
+      nextStep: RecoveryNextStep.COLLECT_APPROVALS,
+      message: 'Waiting for guardian approvals.',
+    };
+  }
+
+  return {
+    canClaim: false,
+    canFinalize: false,
+    claimAvailableAfter: null,
+    nextStep: RecoveryNextStep.NONE,
+    message: '',
+  };
+}
+
 export function toRecoveryRequestDto(
   entity: RecoveryRequestEntity,
   typedData?: Record<string, unknown>,
 ): RecoveryRequestDto {
   const approvals = entity.approvals ?? [];
   const guardiansCanMoveFunds = approvals.some((row) => row.guardian?.canMoveFunds === true);
+  const hints = resolveRecoveryClientHints(entity);
 
   return new RecoveryRequestDto({
     id: entity.id,
@@ -331,6 +439,11 @@ export function toRecoveryRequestDto(
     executionTxHash: entity.executionTxHash,
     failureReason: entity.failureReason,
     finalizeAfter: entity.finalizeAfter,
+    canClaim: hints.canClaim,
+    canFinalize: hints.canFinalize,
+    claimAvailableAfter: hints.claimAvailableAfter,
+    nextStep: hints.nextStep,
+    message: hints.message,
     expiresAt: entity.expiresAt,
     createdAt: entity.createdAt,
   });

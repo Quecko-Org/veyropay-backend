@@ -10,6 +10,10 @@ import {
 } from '@shared/enums';
 import { RecoveryService } from './recovery.service';
 import { CreateRecoveryRequestDto } from './dto/create-recovery-request.dto';
+import {
+  RecoveryNextStep,
+  resolveRecoveryClientHints,
+} from './dto/recovery-response.dto';
 
 describe('RecoveryService', () => {
   const ownerId = 'owner-1';
@@ -452,7 +456,16 @@ describe('RecoveryService', () => {
         approvals: [],
       });
 
-      await expect(service.retryExecute('rec-approved')).rejects.toThrow(/grace period/i);
+      await expect(service.retryExecute('rec-approved')).resolves.toMatchObject({
+        id: 'rec-approved',
+        status: RecoveryRequestStatus.APPROVED,
+        finalizeAfter: expect.any(Date),
+        canClaim: false,
+        canFinalize: false,
+        claimAvailableAfter: expect.any(Date),
+        nextStep: 'await_grace_period',
+        message: expect.stringContaining('Grace period active'),
+      });
       expect(executeSpy).toHaveBeenCalled();
       executeSpy.mockRestore();
     });
@@ -515,6 +528,51 @@ describe('RecoveryService', () => {
       await expect(service.claim('rec-1', { sessionJwt: 'jwt' }, {})).rejects.toBeInstanceOf(
         ConflictException,
       );
+    });
+  });
+});
+
+describe('resolveRecoveryClientHints', () => {
+  it('returns claim step when recovery is executed', () => {
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.EXECUTED,
+      executionTxHash: '0xabc',
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: true,
+      canFinalize: false,
+      claimAvailableAfter: null,
+      nextStep: RecoveryNextStep.CLAIM,
+    });
+  });
+
+  it('returns grace-period wait before finalize and claim', () => {
+    const finalizeAfter = new Date(Date.now() + 180_000);
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.APPROVED,
+      finalizeAfter,
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: false,
+      canFinalize: false,
+      claimAvailableAfter: finalizeAfter,
+      nextStep: RecoveryNextStep.AWAIT_GRACE_PERIOD,
+    });
+  });
+
+  it('returns finalize step after grace period ends', () => {
+    const finalizeAfter = new Date(Date.now() - 1_000);
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.APPROVED,
+      finalizeAfter,
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: false,
+      canFinalize: true,
+      nextStep: RecoveryNextStep.EXECUTE_FINALIZE,
     });
   });
 });

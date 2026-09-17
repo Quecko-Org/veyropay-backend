@@ -109,6 +109,9 @@ export const envValidationSchema = Joi.object({
     }),
   RELAYER_CHAIN_ID: Joi.number().default(8453),
 
+  // Wallet / recovery chain (8453 Base mainnet, 84532 Base Sepolia testnet)
+  WALLET_CHAIN_ID: Joi.number().default(8453),
+
   // Safe SocialRecoveryModule (guardian recovery execution)
   SAFE_RECOVERY_MODULE_ADDRESS: Joi.string().allow('').optional(),
 });

@@ -303,6 +303,31 @@ export class SafeService {
     }
   }
 
+  // Safe Transaction Service often 404s on testnet for freshly deployed Safes that are
+  // not indexed yet — fall back to Protocol Kit / RPC owner reads for recovery checks.
+  async getSafeOwners(safeAddress: Address): Promise<string[]> {
+    try {
+      const info = await this.client.getSafeInfo(safeAddress);
+      return info.owners;
+    } catch (error) {
+      this.logger.warn(
+        { err: error, safeAddress },
+        'Safe tx-service owner lookup failed; falling back to on-chain getOwners',
+      );
+      try {
+        const kit = await this.getDeployedKit(safeAddress);
+        return await kit.getOwners();
+      } catch (onChainError) {
+        this.logger.warn({ err: onChainError, safeAddress }, 'On-chain Safe owner lookup failed');
+        throw new ProviderException(
+          SAFE_PROVIDER_NAME,
+          'Unable to read Safe owners',
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
+    }
+  }
+
   async getSafeCreationInfo(safeAddress: string): Promise<ISafeCreationInfo> {
     try {
       return await this.client.getSafeCreationInfo(safeAddress);

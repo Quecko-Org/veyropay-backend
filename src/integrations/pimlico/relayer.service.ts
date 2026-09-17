@@ -41,8 +41,7 @@ export class RelayerService {
   }
 
   // Signs and broadcasts a plain EIP-1559 transaction from the relayer's own EOA.
-  // Returns the transaction hash immediately after broadcast - like the rest of this
-  // codebase's submission flows (see TransferService), it does not poll for the receipt.
+  // Waits for the receipt so callers can safely read post-state (e.g. getRecoveryRequest).
   async relayTransaction(to: Address, data: Hex): Promise<Hex> {
     let account;
     try {
@@ -77,14 +76,30 @@ export class RelayerService {
       };
 
       const signedTransaction = await account.signTransaction(transaction);
-      return (await this.chainRpcClient.sendRawTransaction(signedTransaction)) as Hex;
+      const txHash = (await this.chainRpcClient.sendRawTransaction(signedTransaction)) as Hex;
+
+      // Must wait for inclusion before callers read module state - broadcasting alone
+      // leaves getRecoveryRequest empty and falsely looks like confirm failed.
+      const receipt = await this.chainRpcClient.waitForTransactionReceipt(txHash);
+      if (receipt.status !== '0x1') {
+        throw new ProviderException(
+          PIMLICO_PROVIDER_NAME,
+          `Relayed recovery transaction reverted (${txHash})`,
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
+
+      return txHash;
     } catch (error) {
+      if (error instanceof ProviderException) {
+        throw error;
+      }
       this.logger.warn({ err: error }, 'Relayer transaction submission failed');
-      throw new ProviderException(
-        PIMLICO_PROVIDER_NAME,
-        'Unable to relay the recovery transaction',
-        HttpStatus.BAD_GATEWAY,
-      );
+      const message =
+        error instanceof Error && error.message.includes('insufficient funds')
+          ? `Relayer EOA ${account.address} has insufficient Base Sepolia ETH to submit recovery transactions — fund it from a faucet`
+          : 'Unable to relay the recovery transaction';
+      throw new ProviderException(PIMLICO_PROVIDER_NAME, message, HttpStatus.BAD_GATEWAY);
     }
   }
 }

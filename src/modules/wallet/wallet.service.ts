@@ -172,7 +172,7 @@ export class WalletService {
     // account - exactly the case sponsored lazy deployment exists for - can never
     // satisfy that, so a plain unsponsored estimate can't be the primary path here.
     // PimlicoService.sponsorUserOperation returns null (not a throw) on decline/failure.
-    const sponsorshipAttempt = await this.pimlicoService.sponsorUserOperation(
+    const sponsorshipResponse = await this.pimlicoService.sponsorUserOperation(
       {
         sender,
         nonce: `0x${nonce.toString(16)}`,
@@ -187,6 +187,7 @@ export class WalletService {
       },
       DEFAULT_ENTRY_POINT,
     );
+    const sponsorshipAttempt = sponsorshipResponse.result;
 
     let gasEstimate: Record<string, string>;
     let sponsorship: typeof sponsorshipAttempt = null;
@@ -234,9 +235,14 @@ export class WalletService {
         // Sponsorship was declined and the sender can't cover its own prefund either
         // (EntryPoint's AA21 revert) - same outcome as the balance check below, just
         // discovered earlier, during simulation instead of a separate balance query.
+        const policyHint = sponsorshipResponse.declineReason
+          ? ` Pimlico: ${sponsorshipResponse.declineReason}. Check sponsorship policy ` +
+            '(Base Sepolia enabled, webhook off, no contract restrictions) or fund the Safe with Sepolia ETH.'
+          : '';
         throw new ConflictException(
           'Insufficient gas balance - your sponsorship limit has been reached and your ' +
-            'wallet does not have enough balance to cover this transaction.',
+            'wallet does not have enough balance to cover this transaction.' +
+            policyHint,
         );
       }
     }

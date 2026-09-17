@@ -13,8 +13,9 @@ import {
   IUserOperation,
   IUserOperationReceipt,
 } from './types';
-import { DEFAULT_ENTRY_POINT } from './constants';
+import { DEFAULT_ENTRY_POINT, PIMLICO_TESTNET_CHAIN_IDS } from './constants';
 import { IPimlicoConfig } from '@core/config/pimlico.config';
+import { ProviderHttpError } from '@common/utils';
 
 // Business modules depend on this service, never on PimlicoClient directly.
 //
@@ -220,20 +221,63 @@ export class PimlicoService {
   async sponsorUserOperation(
     userOperation: IUserOperation,
     entryPoint: string = DEFAULT_ENTRY_POINT,
-  ): Promise<IPimlicoSponsorUserOperationResult | null> {
+  ): Promise<{ result: IPimlicoSponsorUserOperationResult | null; declineReason?: string }> {
+    const policyId = this.config.sponsorshipPolicyId;
+
     try {
-      return await this.client.sponsorUserOperation(
+      const result = await this.client.sponsorUserOperation(
         userOperation,
         entryPoint,
-        this.config.sponsorshipPolicyId,
+        policyId,
       );
+      return { result };
     } catch (error) {
+      const declineReason = this.formatProviderError(error);
+
+      // Policy rejected this sender (common on new wallets) — on testnet retry without
+      // sponsorshipPolicyId so dev is not blocked by dashboard allowlists/webhooks.
+      if (
+        policyId &&
+        PIMLICO_TESTNET_CHAIN_IDS.has(this.config.relayerChainId) &&
+        declineReason.toLowerCase().includes('sponsorshippolicy')
+      ) {
+        this.logger.warn(
+          { err: error, policyId, chainId: this.config.relayerChainId },
+          'Sponsorship policy declined UserOp; retrying without policy on testnet',
+        );
+        try {
+          const result = await this.client.sponsorUserOperation(
+            userOperation,
+            entryPoint,
+            undefined,
+          );
+          return { result };
+        } catch (retryError) {
+          const retryReason = this.formatProviderError(retryError);
+          this.logger.warn(
+            { err: retryError },
+            'Pimlico gas sponsorship declined or unavailable - falling back to unsponsored',
+          );
+          return { result: null, declineReason: retryReason };
+        }
+      }
+
       this.logger.warn(
         { err: error },
         'Pimlico gas sponsorship declined or unavailable - falling back to unsponsored',
       );
-      return null;
+      return { result: null, declineReason };
     }
+  }
+
+  private formatProviderError(error: unknown): string {
+    if (error instanceof ProviderHttpError) {
+      return error.message;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return 'Unknown Pimlico error';
   }
 
   // Native gas-token balance, in wei - only used for the unsponsored fallback path

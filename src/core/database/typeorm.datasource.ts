@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+
+loadEnv({ path: process.env.ENV_FILE ?? '.env' });
 import { DataSource } from 'typeorm';
 
 // Standalone DataSource used exclusively by the TypeORM CLI for generating,

@@ -25,6 +25,13 @@ npm install
 npm run start:dev
 ```
 
+Base Sepolia testnet (uses `testnet.env`):
+
+```bash
+npm run start:dev:testnet
+npm run migration:run:testnet   # first time / after DB wipe
+```
+
 The API listens on `PORT` (default `3000`):
 
 - `GET /health` — liveness/readiness check (Terminus + PostgreSQL)
@@ -116,3 +123,42 @@ delete sub-orgs on Turnkey's side.
 See `/docs` for the project overview, product requirements, system architecture, tech stack,
 folder structure, database design, authentication & recovery, provider integrations, and payment
 & settlement flow.
+
+Guardian social recovery API flow: [`docs/recovery.md`](./docs/recovery.md).
+
+### Social recovery module (grace period)
+
+Grace period is fixed in the module constructor. Changing only
+`SAFE_RECOVERY_MODULE_ADDRESS` in `.env` is **not enough** — guardians are
+registered **per module address**.
+
+To switch (dev/fast test vs production):
+
+1. Set `SAFE_RECOVERY_MODULE_ADDRESS` in `.env` (see table below)
+2. Restart the API (`npm run start:dev`)
+3. On each wallet: **enable** the new module on-chain
+4. **Re-register guardians** on that same module address
+5. Create a **new** recovery request (in-flight recoveries on the old module keep the old period)
+
+| Env | Period | `SAFE_RECOVERY_MODULE_ADDRESS` |
+| --- | --- | --- |
+| Fast test (testnets*) | ~3 minutes | `0x949d01d424bE050D09C16025dd007CB59b3A8c66` |
+| Production (recommended) | 3 days | `0x38275826E1933303E508433dD5f289315Da2541c` |
+| Stricter production | 7 days | `0x088f6cfD8BB1dDb1BB069CCb3fc1A98927D233f2` |
+| Default (unset) | 14 days (Safe official) | `0x4Aa5Bf7D840aC607cb5BD3249e6Af6FC86C04897` |
+
+\*Candide documents the 3-minute module as **testnets only**. On Base mainnet prefer **3 days** for production.
+
+| Period | Typical use | Docs |
+| --- | --- | --- |
+| 3 minutes | Testnets only | [Candide deployments](https://docs.candide.dev/wallet/technical-reference/deployments/) |
+| 3 / 7 / 14 days | Production (3 days recommended UX/security balance) | [Grace period selector](https://docs.candide.dev/wallet/plugins/recovery-service-sdk-reference/) |
+| 14 days (Safe official) | Default in this repo | [Safe modules changelog](https://github.com/safe-global/safe-modules/blob/main/modules/recovery/CHANGELOG.md) |
+
+External references:
+
+- [Candide SocialRecoveryModule SDK](https://docs.candide.dev/wallet/plugins/recovery-module-reference/)
+- [Candide recovery service SDK (grace selectors + addresses)](https://docs.candide.dev/wallet/plugins/recovery-service-sdk-reference/)
+- [Candide contract deployments by chain](https://docs.candide.dev/wallet/technical-reference/deployments/)
+- [Safe Foundation — Candide social recovery](https://safefoundation.org/blog/introducing-candides-social-recovery)
+- [Safe social recovery module changelog (14-day official deploy)](https://github.com/safe-global/safe-modules/blob/main/modules/recovery/CHANGELOG.md)

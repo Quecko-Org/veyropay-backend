@@ -281,10 +281,10 @@ export class RecoveryService {
       return toRecoveryRequestDto(refreshed, this.typedDataFor(refreshed, refreshed.wallet));
     }
 
+    // Grace period is success for multiConfirm - return the request (with finalizeAfter)
+    // so clients poll instead of treating an expected wait as a hard conflict.
     if (refreshed.finalizeAfter && refreshed.finalizeAfter.getTime() > Date.now()) {
-      throw new ConflictException(
-        `Recovery grace period active until ${refreshed.finalizeAfter.toISOString()} - call execute again after that to finalizeRecovery`,
-      );
+      return toRecoveryRequestDto(refreshed, this.typedDataFor(refreshed, refreshed.wallet));
     }
 
     throw new ConflictException(
@@ -307,8 +307,11 @@ export class RecoveryService {
       );
     }
 
-    if (request.executionTxHash) {
-      throw new ConflictException('Recovery already executed on-chain and cannot be cancelled');
+    if (request.finalizeAfter) {
+      throw new ConflictException(
+        `On-chain recovery grace period is active until ${request.finalizeAfter.toISOString()} - ` +
+          'cancel via Safe cancelRecovery UserOp (current owner) or wait and finalize',
+      );
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -497,10 +500,26 @@ export class RecoveryService {
       if (!confirmed) {
         return;
       }
-      onChainRequest = await this.safeReadRecoveryRequest(safeAddress);
+      onChainRequest = await this.readRecoveryRequestAfterConfirm(safeAddress);
     }
 
+    // Period-0 modules finalize inside multiConfirm when execute=true - request is cleared
+    // and owners already swapped. Treat that as success instead of a missing-request error.
     if (!onChainRequest || onChainRequest.executeAfter === 0n) {
+      if (await this.isOnChainOwner(safeAddress, newOwner)) {
+        request.status = RecoveryRequestStatus.EXECUTED;
+        request.failureReason = null;
+        request.finalizeAfter = null;
+        if (!request.executedAt) {
+          request.executedAt = new Date();
+        }
+        wallet.ownerAddress = newOwner;
+        await this.walletService.save(wallet);
+        await this.recoveryRequestRepository.save(request);
+        await this.cancelSiblingActiveRequests(wallet.id, request.id);
+        return;
+      }
+
       request.status = RecoveryRequestStatus.APPROVED;
       request.failureReason =
         'multiConfirmRecovery succeeded but no on-chain recovery request was found';
@@ -623,11 +642,29 @@ export class RecoveryService {
     }
   }
 
+  // Relayer waits for the receipt, but some RPCs still lag on eth_call; short retry before
+  // declaring confirm unsuccessful.
+  private async readRecoveryRequestAfterConfirm(safeAddress: Address): Promise<{
+    guardiansApprovalCount: bigint;
+    newThreshold: bigint;
+    executeAfter: bigint;
+    newOwners: readonly Address[];
+  } | null> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const onChainRequest = await this.safeReadRecoveryRequest(safeAddress);
+      if (onChainRequest && onChainRequest.executeAfter !== 0n) {
+        return onChainRequest;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    return this.safeReadRecoveryRequest(safeAddress);
+  }
+
   private async isOnChainOwner(safeAddress: string, newOwnerAddress: string): Promise<boolean> {
     try {
-      const info = await this.safeService.getSafeInfo(safeAddress);
+      const owners = await this.safeService.getSafeOwners(getAddress(safeAddress));
       const target = getAddress(newOwnerAddress);
-      return info.owners.some((owner) => {
+      return owners.some((owner) => {
         try {
           return getAddress(owner) === target;
         } catch {

@@ -185,7 +185,7 @@ export class RecoveryRequestDto {
 
   @ApiPropertyOptional({
     description:
-      'When set, SocialRecoveryModule grace period ends at this time - call POST .../execute again after to finalizeRecovery (owner swap)',
+      'When set, SocialRecoveryModule grace period ends at this time - call execute again after to finalizeRecovery (owner swap)',
   })
   finalizeAfter?: Date | null;
 
@@ -381,7 +381,7 @@ export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
       claimAvailableAfter: null,
       nextStep: RecoveryNextStep.CLAIM,
       message:
-        'Recovery finalized on-chain. Sign in with your new passkey, then call POST .../claim.',
+        'Recovery finalized on-chain. Sign in with your new passkey, then call claim.',
     };
   }
 
@@ -414,7 +414,7 @@ export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
       canFinalize: false,
       claimAvailableAfter: null,
       nextStep: RecoveryNextStep.EXECUTE_CONFIRM,
-      message: 'Guardians approved. Call POST .../execute to start on-chain confirmation.',
+      message: 'Guardians approved. Call execute to start on-chain confirmation.',
     };
   }
 

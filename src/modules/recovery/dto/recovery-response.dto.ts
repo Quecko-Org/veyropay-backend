@@ -359,7 +359,7 @@ export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
       claimAvailableAfter: null,
       nextStep: RecoveryNextStep.CLAIM,
       message:
-        'Recovery finalized on-chain. Sign in with your new passkey, then call POST .../claim.',
+        'Recovery finalized on-chain. Sign in with your new passkey, then call claim.',
     };
   }
 
@@ -372,7 +372,7 @@ export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
         nextStep: RecoveryNextStep.AWAIT_GRACE_PERIOD,
         message:
           `Grace period active until ${entity.finalizeAfter!.toISOString()}. ` +
-          'Call POST .../execute again after that time to finalize, then claim.',
+          'Call execute again after that time to finalize, then claim.',
       };
     }
 
@@ -383,7 +383,7 @@ export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
         claimAvailableAfter: entity.finalizeAfter ?? null,
         nextStep: RecoveryNextStep.EXECUTE_FINALIZE,
         message:
-          'Grace period ended. Call POST .../execute to finalize the owner swap, then claim.',
+          'Grace period ended. call execute to finalize the owner swap, then claim.',
       };
     }
 

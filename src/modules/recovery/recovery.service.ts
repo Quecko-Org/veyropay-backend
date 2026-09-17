@@ -134,6 +134,15 @@ export class RecoveryService {
       );
     }
 
+    const awaitingClaim = await this.recoveryRequestRepository.findExecutedAwaitingClaimByWalletId(
+      wallet.id,
+    );
+    if (awaitingClaim) {
+      throw new ConflictException(
+        'An executed recovery is awaiting claim - complete POST .../claim before starting a new recovery',
+      );
+    }
+
     let newOwnerAddress: Address;
     try {
       newOwnerAddress = getAddress(dto.newOwnerAddress);
@@ -340,6 +349,10 @@ export class RecoveryService {
       throw new NotFoundException('Recovery request not found');
     }
 
+    if (request.status === RecoveryRequestStatus.CLAIMED) {
+      throw new ConflictException('This recovery has already been claimed');
+    }
+
     if (request.status !== RecoveryRequestStatus.EXECUTED || !request.executionTxHash) {
       throw new ConflictException(
         'Recovery must be fully executed on-chain before the owner can open the wallet - call execute if stuck at approved',
@@ -379,6 +392,9 @@ export class RecoveryService {
       identity.organizationId,
     );
 
+    request.status = RecoveryRequestStatus.CLAIMED;
+    request.claimedAt = new Date();
+    await this.recoveryRequestRepository.save(request);
     await this.cancelSiblingActiveRequests(wallet.id, request.id);
 
     return this.authService.openSessionForUser(wallet.userId, meta, {
@@ -613,7 +629,7 @@ export class RecoveryService {
         this.safeService.getRecoveryModuleAddress(),
         calldata,
       );
-      request.executionTxHash = txHash;
+      request.confirmTxHash = txHash;
       request.failureReason = null;
       request.status = RecoveryRequestStatus.APPROVED;
       await this.recoveryRequestRepository.save(request);

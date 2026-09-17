@@ -163,8 +163,20 @@ export class RecoveryRequestDto {
   })
   typedData?: Record<string, unknown>;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'On-chain multiConfirmRecovery transaction hash (starts grace period)',
+  })
+  confirmTxHash?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'On-chain finalizeRecovery transaction hash (owner swap)',
+  })
   executionTxHash?: string;
+
+  @ApiPropertyOptional({
+    description: 'Set when POST .../claim succeeds and status becomes claimed',
+  })
+  claimedAt?: Date | null;
 
   @ApiPropertyOptional({
     description: 'Present when on-chain multiConfirmRecovery relay failed (status stays approved)',
@@ -352,6 +364,16 @@ export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
   const now = Date.now();
   const finalizeAfterMs = entity.finalizeAfter?.getTime();
 
+  if (entity.status === RecoveryRequestStatus.CLAIMED) {
+    return {
+      canClaim: false,
+      canFinalize: false,
+      claimAvailableAfter: null,
+      nextStep: RecoveryNextStep.NONE,
+      message: 'Recovery completed and claimed.',
+    };
+  }
+
   if (entity.status === RecoveryRequestStatus.EXECUTED && entity.executionTxHash) {
     return {
       canClaim: true,
@@ -359,7 +381,7 @@ export function resolveRecoveryClientHints(entity: RecoveryRequestEntity): {
       claimAvailableAfter: null,
       nextStep: RecoveryNextStep.CLAIM,
       message:
-        'Recovery finalized on-chain. Sign in with your new passkey, then call claim.',
+        'Recovery finalized on-chain. Sign in with your new passkey, then call POST .../claim.',
     };
   }
 
@@ -436,7 +458,9 @@ export function toRecoveryRequestDto(
     recoveryHash: entity.recoveryHash,
     recoveryNonce: entity.recoveryNonce,
     typedData,
+    confirmTxHash: entity.confirmTxHash ?? null,
     executionTxHash: entity.executionTxHash,
+    claimedAt: entity.claimedAt ?? null,
     failureReason: entity.failureReason,
     finalizeAfter: entity.finalizeAfter,
     canClaim: hints.canClaim,

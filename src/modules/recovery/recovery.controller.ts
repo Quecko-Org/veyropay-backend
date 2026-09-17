@@ -78,8 +78,9 @@ export class RecoveryController {
   @ApiOperation({
     summary: 'List recovery requests for a wallet with per-guardian approval status',
     description:
-      'Use walletId from lookup. Each item includes approvals[] (guardianName + status: ' +
-      'pending / approved / rejected) so you can see who has approved.',
+      'Use walletId from lookup. Without status, returns in-flight rows only ' +
+      '(pending, approved, executed). Pass status=claimed for completed recovery history ' +
+      'including confirmTxHash, executionTxHash (finalize), and claimedAt.',
   })
   listRequests(@Query() query: ListRecoveryRequestsDto) {
     return this.recoveryService.listRequests(query.walletId, query.status);

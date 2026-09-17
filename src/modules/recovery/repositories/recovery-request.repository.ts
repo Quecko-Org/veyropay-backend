@@ -5,9 +5,15 @@ import { BaseRepository } from '@database/base.repository';
 import { RecoveryRequestStatus } from '@shared/enums';
 import { RecoveryRequestEntity } from '../entities/recovery-request.entity';
 
-const ACTIVE_RECOVERY_STATUSES = [
+const IN_FLIGHT_RECOVERY_STATUSES = [
   RecoveryRequestStatus.PENDING,
   RecoveryRequestStatus.APPROVED,
+] as const;
+
+const DEFAULT_LIST_STATUSES = [
+  RecoveryRequestStatus.PENDING,
+  RecoveryRequestStatus.APPROVED,
+  RecoveryRequestStatus.EXECUTED,
 ] as const;
 
 @Injectable()
@@ -27,7 +33,17 @@ export class RecoveryRequestRepository extends BaseRepository<RecoveryRequestEnt
   // Pending or approved-but-not-executed — only one of these may exist per wallet.
   findActiveByWalletId(walletId: string): Promise<RecoveryRequestEntity | null> {
     return this.repository.findOne({
-      where: { walletId, status: In([...ACTIVE_RECOVERY_STATUSES]) },
+      where: { walletId, status: In([...IN_FLIGHT_RECOVERY_STATUSES]) },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  findExecutedAwaitingClaimByWalletId(walletId: string): Promise<RecoveryRequestEntity | null> {
+    return this.repository.findOne({
+      where: {
+        walletId,
+        status: RecoveryRequestStatus.EXECUTED,
+      },
       order: { createdAt: 'DESC' },
     });
   }
@@ -37,7 +53,7 @@ export class RecoveryRequestRepository extends BaseRepository<RecoveryRequestEnt
     exceptId: string,
   ): Promise<RecoveryRequestEntity[]> {
     return this.repository.find({
-      where: { walletId, status: In([...ACTIVE_RECOVERY_STATUSES]) },
+      where: { walletId, status: In([...IN_FLIGHT_RECOVERY_STATUSES]) },
     }).then((rows) => rows.filter((row) => row.id !== exceptId));
   }
 
@@ -46,7 +62,9 @@ export class RecoveryRequestRepository extends BaseRepository<RecoveryRequestEnt
     status?: RecoveryRequestStatus,
   ): Promise<RecoveryRequestEntity[]> {
     return this.repository.find({
-      where: status ? { walletId, status } : { walletId },
+      where: status
+        ? { walletId, status }
+        : { walletId, status: In([...DEFAULT_LIST_STATUSES]) },
       relations: {
         wallet: { user: true },
         approvals: { guardian: { guardianUser: true } },

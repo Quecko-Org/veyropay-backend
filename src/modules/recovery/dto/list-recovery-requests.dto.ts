@@ -7,7 +7,12 @@ export class ListRecoveryRequestsDto {
   @IsUUID()
   walletId!: string;
 
-  @ApiPropertyOptional({ enum: RecoveryRequestStatus })
+  @ApiPropertyOptional({
+    enum: RecoveryRequestStatus,
+    description:
+      'When omitted, returns in-flight recoveries only (pending, approved, executed). ' +
+      'Use status=claimed for completed recovery history.',
+  })
   @IsOptional()
   @IsEnum(RecoveryRequestStatus)
   status?: RecoveryRequestStatus;

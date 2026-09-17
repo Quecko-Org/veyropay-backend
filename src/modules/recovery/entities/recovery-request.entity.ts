@@ -36,6 +36,12 @@ export class RecoveryRequestEntity extends BaseEntity {
   @Column({ name: 'executed_at', type: 'timestamptz', nullable: true })
   executedAt?: Date;
 
+  @Column({ name: 'claimed_at', type: 'timestamptz', nullable: true })
+  claimedAt?: Date | null;
+
+  @Column({ name: 'confirm_tx_hash', type: 'varchar', nullable: true })
+  confirmTxHash?: string;
+
   @Column({ name: 'execution_tx_hash', nullable: true })
   executionTxHash?: string;
 

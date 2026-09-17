@@ -91,6 +91,7 @@ describe('RecoveryService', () => {
   let recoveryRequestRepository: {
     findPendingByWalletId: jest.Mock;
     findActiveByWalletId: jest.Mock;
+    findExecutedAwaitingClaimByWalletId: jest.Mock;
     findActiveOthersByWalletId: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
@@ -139,6 +140,7 @@ describe('RecoveryService', () => {
     recoveryRequestRepository = {
       findPendingByWalletId: jest.fn().mockResolvedValue(null),
       findActiveByWalletId: jest.fn().mockResolvedValue(null),
+      findExecutedAwaitingClaimByWalletId: jest.fn().mockResolvedValue(null),
       findActiveOthersByWalletId: jest.fn().mockResolvedValue([]),
       create: jest.fn((data: Record<string, unknown>) => ({ id: 'rec-1', ...data })),
       save: jest.fn((entity: Record<string, unknown>) => Promise.resolve(entity)),
@@ -514,6 +516,12 @@ describe('RecoveryService', () => {
         expect.objectContaining({ revokeOthers: true }),
       );
       expect(tokens.accessToken).toBe('a');
+      expect(recoveryRequestRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: RecoveryRequestStatus.CLAIMED,
+          claimedAt: expect.any(Date),
+        }),
+      );
     });
 
     it('rejects claim when recovery is not executed', async () => {
@@ -559,6 +567,20 @@ describe('resolveRecoveryClientHints', () => {
       canFinalize: false,
       claimAvailableAfter: finalizeAfter,
       nextStep: RecoveryNextStep.AWAIT_GRACE_PERIOD,
+    });
+  });
+
+  it('returns none step when recovery status is claimed', () => {
+    const hints = resolveRecoveryClientHints({
+      status: RecoveryRequestStatus.CLAIMED,
+      executionTxHash: '0xabc',
+      confirmTxHash: '0xconfirm',
+      claimedAt: new Date(),
+    } as never);
+
+    expect(hints).toMatchObject({
+      canClaim: false,
+      nextStep: RecoveryNextStep.NONE,
     });
   });
 

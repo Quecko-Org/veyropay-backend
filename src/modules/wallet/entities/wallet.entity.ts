@@ -30,7 +30,7 @@ export class WalletEntity extends BaseEntity {
   @Column({ type: 'enum', enum: WalletStatus, default: WalletStatus.PENDING_PROVIDER })
   status!: WalletStatus;
 
-  // Configurable N-of-M guardian recovery threshold (e.g. 2-of-3, 3-of-5). Nullable -
+  // Configurable N-of-M guardian recovery threshold (e.g. 2-of-3, 3-of-5). Nullable
   // when unset, RecoveryRequestService falls back to requiring every active guardian to
   // approve (the original MVP policy). Set via GuardianService.setGuardianThreshold(),
   // validated against the current active guardian count at write time and re-validated

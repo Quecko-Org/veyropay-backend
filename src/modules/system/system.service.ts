@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from '@common/constants';
 import { toSkipTake } from '@common/utils';
 import { PaginatedResultDto, PaginationQueryDto } from '@shared/dto';
@@ -13,6 +15,7 @@ import { BaanxHealthService } from '@integrations/baanx/health.service';
 import { SendgridHealthService } from '@integrations/sendgrid/health.service';
 import { AuditLogRepository } from './repositories/audit-log.repository';
 import { AuditLogEntity } from './entities/audit-log.entity';
+import { ADMIN_CLEAR_DATABASE_PASSWORD } from './constants';
 
 @Injectable()
 export class SystemService {
@@ -27,6 +30,8 @@ export class SystemService {
     private readonly rainHealthService: RainHealthService,
     private readonly baanxHealthService: BaanxHealthService,
     private readonly sendgridHealthService: SendgridHealthService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async recordAudit(
@@ -72,5 +77,23 @@ export class SystemService {
     ];
 
     return Object.assign({}, ...results) as Record<string, unknown>;
+  }
+
+  // Temporary admin wipe - truncates every app entity table. Does not touch the
+  // TypeORM migrations table. Replace with proper admin auth later.
+  async clearDatabase(password: string): Promise<{ cleared: true; tables: string[] }> {
+    if (password !== ADMIN_CLEAR_DATABASE_PASSWORD) {
+      throw new ForbiddenException('Invalid admin password');
+    }
+
+    const tables = this.dataSource.entityMetadatas.map((meta) => meta.tableName);
+    if (tables.length === 0) {
+      return { cleared: true, tables: [] };
+    }
+
+    const quoted = tables.map((name) => `"${name}"`).join(', ');
+    await this.dataSource.query(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+
+    return { cleared: true, tables };
   }
 }

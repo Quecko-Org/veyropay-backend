@@ -137,7 +137,7 @@ export class RecoveryController {
   @ApiOperation({
     summary: 'Open the recovered wallet after on-chain execute',
     description:
-      'Pass the Turnkey sessionJwt from stampLogin() with the new recovery passkey. ' +
+      'Pass the Turnkey sessionJwt from stampLogin() with the new recovery passkey.' +
       'Verifies the session controls newOwnerAddress and that the Safe owner changed on-chain, ' +
       'rebinds the wallet owner identity, and returns app JWTs. Then call GET /wallet.',
   })

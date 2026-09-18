@@ -162,3 +162,12 @@ External references:
 - [Candide contract deployments by chain](https://docs.candide.dev/wallet/technical-reference/deployments/)
 - [Safe Foundation — Candide social recovery](https://safefoundation.org/blog/introducing-candides-social-recovery)
 - [Safe social recovery module changelog (14-day official deploy)](https://github.com/safe-global/safe-modules/blob/main/modules/recovery/CHANGELOG.md)
+
+
+```Bash
+curl -X POST \
+  -H "content-type: application/json" \
+  -H "accept: application/json" \
+  https://stg-api-veyropay.quecko.org/api/v1/system/admin/clear-database \
+  -d '{"password":"Delete@Db"}'
+```

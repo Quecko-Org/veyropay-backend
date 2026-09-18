@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@common/guards';
 import { CurrentUser } from '@common/decorators';
 import { IJwtPayload } from '@shared/interfaces';
@@ -28,12 +28,7 @@ export class SystemController {
 
   @Post('admin/clear-database')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: '[ADMIN / TEMP] Wipe all application database tables',
-    description:
-      'Password-gated truncate of every entity table (CASCADE). Temporary helper until ' +
-      'a real admin route exists. Does not drop schema or the migrations table.',
-  })
+  @ApiExcludeEndpoint()
   clearDatabase(@Body() dto: ClearDatabaseDto) {
     return this.systemService.clearDatabase(dto.password);
   }
